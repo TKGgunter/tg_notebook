@@ -99,6 +99,10 @@ fn main(){
 
     let program = glium::Program::from_source(&display, vertex_shader_src, fragment_shader_src, None).expect("Could not compile shaders");
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
+
+
+    //CLEANUP remove me 
+    let mut temp_texture : Option<glium::texture::Texture2d> = None;
     'gameloop: loop{
 
         event_loop.poll_events(|event| {
@@ -129,21 +133,21 @@ fn main(){
 
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);
-        //struct Renderer<'a>{
-        //    display: &'a glium::Display,
-        //    target:  &mut 'a glium::Frame,
-        //    indices: glium::index::NoIndices,
-        //    program: glium::Program,
-        //}
-
         {
 
-            let renderer = Renderer{  display: &display, 
+            let mut renderer = Renderer{  display: &display, 
                                       target:  &mut target, 
                                       indices: &indices,
                                       program: &program,
                                    }; 
-            TEMP_FN(renderer); //&mut target, &display, &indices);
+
+            let now = std::time::Instant::now();
+            if temp_texture.is_none() {
+                temp_texture = Some( TEMP_FN(renderer) );
+            } else {
+                gl_drawtexture(&mut renderer, temp_texture.as_mut().unwrap(), 0.0, 0.0, None);
+            }
+            println!("render bmp {}", now.elapsed().as_millis());
         }
 
         target.finish().unwrap();
@@ -154,10 +158,11 @@ fn main(){
 }
 
 
-fn TEMP_FN( mut renderer: Renderer ){
+fn TEMP_FN( mut renderer: Renderer )->glium::texture::Texture2d{
 
-    let bmp = Bmp{ w: 10, h: 10, buffer: vec![150u8; 4*10*10]};
-    gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, None);
+    let ax_value = 1000;
+    let bmp = Bmp{ w: ax_value, h: ax_value, buffer: vec![150u8; (4*ax_value*ax_value) as usize]};
+    return gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, None);
 }
 
 //TODO TEMP
@@ -173,13 +178,11 @@ fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, perspective: 
     let Renderer{display, target, indices, program} = renderer;
 
     let w = bmp.w;
-;   let h = bmp.h;
+    let h = bmp.h;
 
     let ratio = w as f32 / h as f32;
 
     let image = glium::texture::RawImage2d::from_raw_rgba(bmp.buffer.clone(), (w, h));//I would rather not clone but what can you do.
-
-    //TODO Store this value on to this and drop only when we update the bmps
     let texture = glium::texture::Texture2d::new(*display, image).expect("we could not make the texture");
 
     let mut _perspective = perspective.unwrap_or(
@@ -189,7 +192,7 @@ fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, perspective: 
                              [0.0, 0.0, 0.0, 1.0f32]]
                           );
     //TODO
-    //need an x and y scaling term
+    //need an x-axis and y-axis scaling term
     let     transform = Matrix4::new(1.0, 0.0, 0.0, 0.0,
                                      0.0, 1.0, 0.0, 0.0,
                                      0.0, 0.0, 1.0, 0.0,
@@ -197,8 +200,8 @@ fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, perspective: 
      
 
     fn populate_array_using_matrix(in_matrix: &Matrix4<f32>, out_array: &mut [[f32;4];4]){
-        //TODO
-        //move out at some point
+    //TODO
+    //move out at some point
         for (i, it) in in_matrix.iter().enumerate(){
             let _i = i / 4;
             let _j = i % 4;
@@ -221,9 +224,62 @@ fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, perspective: 
         target.draw(&vertexbuffer, *indices, program, &uniforms, &Default::default()).unwrap();
     }
 
-
     return texture;
 }
+
+fn gl_drawtexture(renderer: &mut Renderer, texture: &glium::texture::Texture2d, x: f32, y: f32, perspective: Option<[[f32;4];4]> ){
+    let Renderer{display, target, indices, program} = renderer;
+
+    let w = texture.width();
+    let h = texture.height();
+
+    let ratio = w as f32 / h as f32;
+
+    let mut _perspective = perspective.unwrap_or(
+                          [  [1.0, 0.0, 0.0, 0.0,],
+                             [0.0, 1.0, 0.0, 0.0,],
+                             [0.0, 0.0, 1.0, 0.0,],
+                             [0.0, 0.0, 0.0, 1.0f32]]
+                          );
+    //TODO
+    //need an x-axis and y-axis scaling term
+    let     transform = Matrix4::new(1.0, 0.0, 0.0, 0.0,
+                                     0.0, 1.0, 0.0, 0.0,
+                                     0.0, 0.0, 1.0, 0.0,
+                                       x,   y, 1.0, 1.0);
+     
+
+    fn populate_array_using_matrix(in_matrix: &Matrix4<f32>, out_array: &mut [[f32;4];4]){
+    //TODO
+    //move out at some point
+        for (i, it) in in_matrix.iter().enumerate(){
+            let _i = i / 4;
+            let _j = i % 4;
+            out_array[_j][_i] = *it;
+        }
+    }
+
+    let mut _matrix = [[0.0f32; 4]; 4];
+    populate_array_using_matrix( &transform, &mut _matrix);
+    {
+        let uniforms = uniform!{ 
+            perspective: _perspective,	
+            matrix: _matrix,
+            tex: texture,
+        };
+        
+        //TODO This is temp
+        let vertexbuffer = generate_plane(0.0, ratio, 0.0, 1.0, display);
+
+        target.draw(&vertexbuffer, *indices, program, &uniforms, &Default::default()).unwrap();
+    }
+}
+
+
+
+
+
+
 
 
 
