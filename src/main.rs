@@ -3,18 +3,82 @@ extern crate glium;
 extern crate nalgebra;
 
 use nalgebra::core::Matrix4;
-
-
-//TODO
-//what is the time cost of loading various resolutions of textures all the time
-
 use glium::{glutin, Surface};
 
+
+//NOTE
+//what is the time cost of loading various resolutions of textures all the time : it takes about 2 millis to generate a high res bmp
+//To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
+
+//TODO
+// + move a box
+
+
+
+
+
+
+
+#[derive(Clone, Copy)]
 pub struct WindowInfo{
     pub focused: bool,
-    pub width: i32,
-    pub height: i32,
+    pub width  : f64,
+    pub height : f64,
 }
+
+
+static mut WINDOWINFO : WindowInfo = WindowInfo{  focused: false,
+                                                  width  : 0.0,
+                                                  height : 0.0,
+                                                };
+
+
+fn clone_windowinfo()->WindowInfo{ unsafe{
+    WINDOWINFO.clone()
+}}
+
+fn set_windoinfo(winfo: WindowInfo){unsafe{
+    WINDOWINFO = winfo; 
+}}
+
+
+
+
+#[derive(PartialEq, Clone)]
+pub enum ButtonStatus{
+    Up,
+    Down,
+    Default
+}
+pub struct MouseInfo{
+    pub x: i32,
+    pub y: i32,
+
+    pub lbutton: ButtonStatus,
+    pub old_lbutton: ButtonStatus,
+
+    pub rbutton: ButtonStatus,
+    pub old_rbutton: ButtonStatus,
+
+    pub wheel: isize,
+    pub wheel_delta: i32,
+}
+impl MouseInfo{
+    pub fn new()->MouseInfo{
+        MouseInfo{
+            x: 0,
+            y: 0,
+            lbutton: ButtonStatus::Default,
+            old_lbutton: ButtonStatus::Default,
+            rbutton: ButtonStatus::Default,
+            old_rbutton: ButtonStatus::Default,
+            wheel: 0,
+            wheel_delta: 0,
+        }
+    }
+}
+
+
 
 struct Renderer<'a>{
     display: &'a glium::Display,
@@ -50,8 +114,11 @@ fn main(){
     let glutin::dpi::PhysicalSize{width: monitor_width, height: monitor_height} = monitor.get_dimensions();
 
     let _window = glutin::WindowBuilder::new()
-                    .with_dimensions(glutin::dpi::LogicalSize{width:monitor_width / 2.0, height:monitor_height - 20.0})
-                    .with_title("tg_notebook");
+                    .with_dimensions(glutin::dpi::LogicalSize{width:monitor_width / 2.0, height:monitor_height - 70.0}) //TODO Not robust and 
+                    .with_title("tg_notebook");                                                                         //should be different per os and user config
+
+    let mut windowinfo = WindowInfo{focused: true, width: monitor_width / 2.0 , height: monitor_height - 70.0 };
+
     let context = glutin::ContextBuilder::new();
     let display = glium::Display::new(_window, context, &event_loop).unwrap();
 
@@ -93,22 +160,30 @@ fn main(){
         }
     "#;
 
+    set_windoinfo(windowinfo);
+    let mut mouseinfo = MouseInfo::new();
+    let mut temp_state = TEMP_STATE{  init: false,
+                                      box_in_focus: false, 
+                                      x: 0.0, 
+                                      y: 0.0,
+                                      w: 0.0, 
+                                      h: 0.0};
 
-    let mut windowinfo = WindowInfo{focused: true, width: 0, height: 0};
-    let mut exit = false;
+
 
     let program = glium::Program::from_source(&display, vertex_shader_src, fragment_shader_src, None).expect("Could not compile shaders");
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
 
-
+    let mut exit = false;
     //CLEANUP remove me 
     let mut temp_texture : Option<glium::texture::Texture2d> = None;
     'gameloop: loop{
+        let mut window_info = clone_windowinfo();
 
         event_loop.poll_events(|event| {
             match event {
-                glutin::Event::DeviceEvent{ event, ..} => { 
-                    match event { 
+                glutin::Event::DeviceEvent{ event: devent, ..} => { 
+                    match devent { 
                         glutin::DeviceEvent::Key(kb) =>{ 
                             //NOTE 
                             //scancode 1 is the code for Esc
@@ -117,19 +192,57 @@ fn main(){
                         _=> () 
                     }
                 },
-                glutin::Event::WindowEvent { event, .. } => match event {
+                glutin::Event::WindowEvent { event: wevent, .. } => match wevent {
                     glutin::WindowEvent::CloseRequested => exit = true,
                     glutin::WindowEvent::Focused(_bool) => windowinfo.focused = _bool,
+                    glutin::WindowEvent::Resized(pos) => {  windowinfo.width = pos.width; windowinfo.height = pos.height; },
+
+                    glutin::WindowEvent::CursorMoved{position, ..} => {
+                        let _pos : (i32, i32) = position.into();
+                        mouseinfo.x = _pos.0;
+                        mouseinfo.y = windowinfo.height as i32 - _pos.1;
+                    },
+                    glutin::WindowEvent::MouseInput{button, state, ..} => {
+                        match button{
+                            glutin::MouseButton::Left=>{
+                                if state == glutin::ElementState::Pressed{
+                                    mouseinfo.lbutton = ButtonStatus::Down;
+                                } else{
+                                    mouseinfo.lbutton = ButtonStatus::Up;
+                                }
+                            },
+                            glutin::MouseButton::Right=>{
+                                if state == glutin::ElementState::Pressed{
+                                    mouseinfo.rbutton = ButtonStatus::Down;
+                                } else{
+                                    mouseinfo.rbutton = ButtonStatus::Up;
+                                }
+                            },
+                            _=>{/*TODO*/}
+                        }
+                    },
+                    glutin::WindowEvent::MouseWheel{delta, ..} => {
+                        match delta{
+                            glutin::MouseScrollDelta::LineDelta(_, y) => {
+                                mouseinfo.wheel += y as isize;
+                                mouseinfo.wheel_delta = y as _;
+                            },
+                            glutin::MouseScrollDelta::PixelDelta(lgpos) => {
+                                let _pos : (i32, i32) = lgpos.into();
+                                mouseinfo.wheel += _pos.1 as isize;
+                                mouseinfo.wheel_delta = _pos.1 as i32;
+                            }
+                        }
+                    },
                     _=>{}
-                    //glutin::WindowEvent::CursorMoved{position, ..} => {
-                    //    let _pos : (i32, i32) = position.into();
-                    //    mouseinfo.x = _pos.0;
-                    //    mouseinfo.y = _pos.1;
-                    //},
                 },
                 _=>{}
             }
         });
+
+
+        set_windoinfo(windowinfo);
+
 
         let mut target = display.draw();
         target.clear_color(0.0, 0.0, 0.0, 1.0);
@@ -141,13 +254,15 @@ fn main(){
                                       program: &program,
                                    }; 
 
-            let now = std::time::Instant::now();
+
+
             if temp_texture.is_none() {
-                temp_texture = Some( TEMP_FN(renderer) );
+                temp_texture = TEMP_FN(&mut temp_state, renderer, &mouseinfo, None);
             } else {
-                gl_drawtexture(&mut renderer, temp_texture.as_mut().unwrap(), 0.0, 0.0, None);
+                TEMP_FN(&mut temp_state, renderer, &mouseinfo, temp_texture.as_mut());
             }
-            println!("render bmp {}", now.elapsed().as_millis());
+
+
         }
 
         target.finish().unwrap();
@@ -157,12 +272,60 @@ fn main(){
 
 }
 
+struct TEMP_STATE{
+    init: bool,
+    box_in_focus: bool,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32
+}
+fn TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
 
-fn TEMP_FN( mut renderer: Renderer )->glium::texture::Texture2d{
+    if state.init == false{
+        state.init = true;
+        state.w    = 1000.0;
+        state.h    = 1000.0;
+    }
 
-    let ax_value = 1000;
-    let bmp = Bmp{ w: ax_value, h: ax_value, buffer: vec![150u8; (4*ax_value*ax_value) as usize]};
-    return gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, None);
+
+    if texture.is_none(){
+        let w = state.w as u32;
+        let h = state.h as u32;
+
+        let bmp = Bmp{ w: w, h: h, buffer: vec![150u8; (4*w*h) as usize]};
+        return Some(gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, None));
+    }
+
+
+    #[inline]
+    fn state_rect_to_arr(state: &TEMP_STATE)->[f32;4]{
+    //CLEANUP not used
+        return [state.x, state.y, state.w, state.h];
+    }
+
+    fn convert_screen_coor_to_pixel_corr(rect: [f64;4])-> [i32; 4]{
+        let WindowInfo{focused, width, height} = clone_windowinfo();
+        
+        let mut rt = [0i32; 4];
+        rt[0] = ( ( 1.0 + rect[0] ) * width / 2.0) as i32;
+        rt[1] = ( ( 1.0 + rect[1] ) * height / 2.0) as i32;
+        rt[2] = ( rect[2] * width / 2.0) as i32;
+        rt[3] = ( rect[3] * height / 2.0) as i32;
+       
+        rt
+    }
+
+    if mouseinfo.lbutton == ButtonStatus::Down && in_rect( mouseinfo.x as i32, mouseinfo.y as i32,  
+                                                  convert_screen_coor_to_pixel_corr([state.x as f64, state.y as f64, 1.0, 1.0]) ) {
+        //TODO 
+        //move our plane
+        println!("button down and within rect {} {}", mouseinfo.x, mouseinfo.y); 
+    }
+
+
+    gl_drawtexture(&mut renderer, texture.unwrap(), state.x, state.y, None);
+    return None;
 }
 
 //TODO TEMP
@@ -275,7 +438,38 @@ fn gl_drawtexture(renderer: &mut Renderer, texture: &glium::texture::Texture2d, 
     }
 }
 
-
+pub fn in_rect(x: i32, y: i32, rect: [i32;4])->bool{
+    let mut rt = true;
+    if x < rect[0]{
+        rt = false;
+    }
+    if y < rect[1]{
+        rt = false;
+    }
+    if x > rect[0] + rect[2]{
+        rt = false;
+    }
+    if y > rect[1] + rect[3]{
+        rt = false;
+    }
+    return rt;
+}
+pub fn in_rectf32(x: f32, y: f32, rect: [f32;4])->bool{
+    let mut rt = true;
+    if x < rect[0]{
+        rt = false;
+    }
+    if y < rect[1]{
+        rt = false;
+    }
+    if x > rect[0] + rect[2]{
+        rt = false;
+    }
+    if y > rect[1] + rect[3]{
+        rt = false;
+    }
+    return rt;
+}
 
 
 
