@@ -11,8 +11,9 @@ use glium::{glutin, Surface};
 //To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
 
 //TODO
-// + move a box
-
+// + move box   X DONE
+// + scrolling  X DONE
+// + render within texture
 
 
 
@@ -167,7 +168,11 @@ fn main(){
                                       x: 0.0, 
                                       y: 0.0,
                                       w: 0.0, 
-                                      h: 0.0};
+                                      h: 0.0,
+
+                                      prev_mouse: [0, 0],
+                                      .. Default::default()
+                                      };
 
 
 
@@ -180,6 +185,7 @@ fn main(){
     'gameloop: loop{
         let mut window_info = clone_windowinfo();
 
+        mouseinfo.wheel_delta = 0;
         event_loop.poll_events(|event| {
             match event {
                 glutin::Event::DeviceEvent{ event: devent, ..} => { 
@@ -272,18 +278,63 @@ fn main(){
 
 }
 
+#[derive(Default)]
 struct TEMP_STATE{
     init: bool,
     box_in_focus: bool,
     x: f32,
     y: f32,
     w: f32,
-    h: f32
+    h: f32, 
+
+    prev_mouse: [i32; 2],
+    rect1: [f32; 4],
 }
+
+
 fn TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+
+    
+    
+}
+
+
+fn _2TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+    //Info
+    //Scrolling example.
 
     if state.init == false{
         state.init = true;
+        state.box_in_focus = false;
+        state.w    = 1000.0;
+        state.h    = 1000.0;
+
+
+        state.rect1 = [0.0, 0.0, 0.4, 0.2];
+    }
+
+    let mut rect1 = Bmp{ w: 30,
+                         h: 30,
+                         buffer: vec![0x11; 4*30*30],
+                       };
+
+    state.rect1[1] += (mouseinfo.wheel_delta as f32) * 1.0/10.0;
+    
+    let [x, y, w, h] = state.rect1;
+    gl_drawbmp( &mut renderer, &rect1, x, y, w, h, None );
+
+    return None;
+}
+
+
+fn _TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+    //Info
+    //Test function used to move a rectangle around the screen after a click
+
+
+    if state.init == false{
+        state.init = true;
+        state.box_in_focus = false;
         state.w    = 1000.0;
         state.h    = 1000.0;
     }
@@ -294,15 +345,10 @@ fn TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInf
         let h = state.h as u32;
 
         let bmp = Bmp{ w: w, h: h, buffer: vec![150u8; (4*w*h) as usize]};
-        return Some(gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, None));
+        return Some(gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, 1.0, 1.0, None));
     }
 
 
-    #[inline]
-    fn state_rect_to_arr(state: &TEMP_STATE)->[f32;4]{
-    //CLEANUP not used
-        return [state.x, state.y, state.w, state.h];
-    }
 
     fn convert_screen_coor_to_pixel_corr(rect: [f64;4])-> [i32; 4]{
         let WindowInfo{focused, width, height} = clone_windowinfo();
@@ -316,12 +362,20 @@ fn TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInf
         rt
     }
 
+    //Box movement test
     if mouseinfo.lbutton == ButtonStatus::Down && in_rect( mouseinfo.x as i32, mouseinfo.y as i32,  
                                                   convert_screen_coor_to_pixel_corr([state.x as f64, state.y as f64, 1.0, 1.0]) ) {
-        //TODO 
-        //move our plane
-        println!("button down and within rect {} {}", mouseinfo.x, mouseinfo.y); 
-    }
+
+        let WindowInfo{focused, width, height} = clone_windowinfo();
+
+        if state.box_in_focus == true {
+            state.x += 2.0*(mouseinfo.x - state.prev_mouse[0]) as f32 / width as f32;
+            state.y += 2.0*(mouseinfo.y - state.prev_mouse[1]) as f32 / height as f32;
+        } else {
+            state.box_in_focus = true;
+        }
+        state.prev_mouse = [ mouseinfo.x, mouseinfo.y];
+    } 
 
 
     gl_drawtexture(&mut renderer, texture.unwrap(), state.x, state.y, None);
@@ -337,7 +391,7 @@ struct Bmp{
 
 //TODO
 //Think about this
-fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, perspective: Option<[[f32;4];4]> )->glium::texture::Texture2d{
+fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, sw: f32, sh: f32, perspective: Option<[[f32;4];4]> )->glium::texture::Texture2d{
     let Renderer{display, target, indices, program} = renderer;
 
     let w = bmp.w;
@@ -356,8 +410,8 @@ fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, perspective: 
                           );
     //TODO
     //need an x-axis and y-axis scaling term
-    let     transform = Matrix4::new(1.0, 0.0, 0.0, 0.0,
-                                     0.0, 1.0, 0.0, 0.0,
+    let     transform = Matrix4::new(sw, 0.0, 0.0, 0.0,
+                                     0.0, sh, 0.0, 0.0,
                                      0.0, 0.0, 1.0, 0.0,
                                        x,   y, 1.0, 1.0);
      
