@@ -11,8 +11,6 @@ use glium::{glutin, Surface};
 //To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
 
 //TODO
-// + move box   X DONE
-// + scrolling  X DONE
 // + render within texture
 
 
