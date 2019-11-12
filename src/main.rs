@@ -1,18 +1,24 @@
 #[macro_use]
 extern crate glium;
 extern crate nalgebra;
+extern crate stb_tt_sys;
 
 use nalgebra::core::Matrix4;
 use glium::{glutin, Surface};
 
+use stb_tt_sys::*;
+use std::ptr::{null_mut, null};
 
 //NOTE
 //what is the time cost of loading various resolutions of textures all the time : it takes about 2 millis to generate a high res bmp
 //To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
 
 //TODO
-// + render within texture
+// + render text
 
+
+
+static mut DEFAULT_FONT_BUFFER : &'static [u8] = include_bytes!("../assets/RobotoMono-Regular.ttf");
 
 
 
@@ -39,6 +45,170 @@ fn clone_windowinfo()->WindowInfo{ unsafe{
 fn set_windoinfo(winfo: WindowInfo){unsafe{
     WINDOWINFO = winfo; 
 }}
+
+
+
+
+pub static mut GLOBAL_FONTINFO : stbtt_fontinfo = new_stbtt_fontinfo();
+
+pub fn initfont(font_buffer: &[u8]){unsafe{
+    if stbtt_InitFont(&mut GLOBAL_FONTINFO as *mut stbtt_fontinfo, font_buffer.as_ptr(), 0) == 0{
+        panic!("font was not able to load.");
+    }
+}}
+
+
+
+type FontLib<'a> = std::collections::HashMap<String, &'a[u8]>; //TODO TinyString
+
+#[derive(Eq, PartialEq, Hash, Clone)]
+struct CharKey{
+    symbol:    char,
+    size:      u32,
+    font_name: Option<String>,//TODO TinyString,
+}
+
+struct CharMap{
+    texture: glium::texture::Texture2d,
+    map:     std::collections::HashMap<CharKey, [f32; 4]>,
+    cursor: [f32; 2],
+    current_maxdepth: f32,
+}
+impl CharMap{
+    pub fn new(display: &glium::Display)->CharMap{
+        CharMap{
+            texture: glium::texture::Texture2d::empty(display, 1000, 1000)
+                                .expect("Texture could not be generated."),
+            map    : std::collections::HashMap::new(),
+            cursor: [-1.0, -1.0],
+            current_maxdepth: -1.0,
+            
+        }
+    }
+    pub fn insert(&mut self, display: &glium::Display, program: &glium::Program, indices: &glium::index::NoIndices, charkey: CharKey, fontlib: &FontLib)->Option<()>{
+    //TODO
+    //might need to change how we render to texture
+
+        let _charkey = charkey.clone();
+        let CharKey{symbol: character, size, font_name} = charkey;
+        let mut canvas;
+        let color = [1.0, 1.0, 1.0, 1.0];
+
+        unsafe{
+            //construct a char buffer
+            let mut char_buffer;
+            let cwidth;
+            let cheight;
+            let scale;
+            {//NOTE
+             //this accounts for about 10% of character rendering time.
+             //If we want an easy speed up we can save the results to a global buffer  map
+             // can only add to it when there is a new character being renedered
+             // however if we build in release mode it doesn't really matter
+                let mut x0 = 0i32;
+                let mut x1 = 0i32;
+                let mut y0 = 0i32;
+                let mut y1 = 0i32;
+                let mut ascent = 0;
+                let mut descent = 0;
+
+                let mut font;
+                if font_name.is_none(){
+                    font = fontlib["default"];
+                } else{
+                    font = fontlib[&font_name.unwrap()];
+                }
+                initfont(font);
+
+                stbtt_GetFontVMetrics( &mut GLOBAL_FONTINFO as *mut stbtt_fontinfo,
+                                      &mut ascent as *mut i32,
+                                      &mut descent as *mut i32, null_mut());
+                scale = stbtt_ScaleForPixelHeight(&GLOBAL_FONTINFO as *const stbtt_fontinfo, size as f32);
+                let baseline = (ascent as f32 * scale ) as i32;
+
+                cwidth = (scale * (ascent - descent) as f32 ) as usize + 4;
+                cheight = (scale * (ascent - descent) as f32 ) as usize + 4;
+                char_buffer = vec![0u8; cwidth * cheight];
+
+                //render char to buffer
+                stbtt_GetCodepointBitmapBoxSubpixel(&GLOBAL_FONTINFO as *const stbtt_fontinfo, character as u8, scale, scale, 0.0,0.0,
+                                                    &mut x0 as *mut i32,
+                                                    &mut y0 as *mut i32,
+                                                    &mut x1 as *mut i32,
+                                                    &mut y1 as *mut i32);
+                //Sometimes x gets set to rediculous values
+                stbtt_MakeCodepointBitmapSubpixel(  &GLOBAL_FONTINFO as *const stbtt_fontinfo,
+                                                    &mut char_buffer[cwidth as usize * (baseline + y0) as usize + (5 + x0) as usize ] as *mut u8,
+                                                     x1-x0+2, y1-y0, cwidth as i32, scale, scale,0.0, 0.0, character as i32);
+
+                
+                canvas = Bmp{w: cwidth as u32, h: cheight as u32, buffer: vec![0;4*cwidth*cheight]};
+            }
+            if character as u8 > 0x20{   //render char_buffer to main_buffer
+                let x = 4;
+                let y = 4;
+                let buffer = canvas.buffer.as_mut_ptr() as *mut u32;
+                let gwidth = canvas.w as usize;
+                let gheight = canvas.h as usize;
+                let offset = (x as usize + y as usize * gwidth) as usize;
+                for i in 0..cheight{
+                    for j in 0..cwidth{
+                        if (j + i*gwidth + offset) > gwidth * gheight {continue;}
+
+                        if j + x as usize  > gwidth {continue;}
+                        if i + y as usize  > gheight {continue;}
+
+                        let text_alpha = char_buffer[j + cwidth * (cheight - 1 - i)] as f32;
+                        let a = color[3];
+                        let r = (color[0] * text_alpha * a) as u32;
+                        let g = (color[1] * text_alpha * a) as u32;
+                        let b = (color[2] * text_alpha * a) as u32;
+
+                        let dst_rgb = buffer.offset( (j + i*gwidth + offset) as isize);
+                        //TODO
+                        //We need to clap these values
+                        let _r = (*(dst_rgb as *const u8).offset(0) as f32 * (255.0 - text_alpha * a )/255.0 ) as u32;
+                        let _g = (*(dst_rgb as *const u8).offset(1) as f32 * (255.0 - text_alpha * a )/255.0 ) as u32;
+                        let _b = (*(dst_rgb as *const u8).offset(2) as f32 * (255.0 - text_alpha * a )/255.0 ) as u32;
+                        let _a = (*(dst_rgb as *const u8).offset(3) as f32 * (255.0 - text_alpha * a )/255.0 ) as u32;
+
+                        *buffer.offset( (j + i*gwidth + offset) as isize) = 0x00000000 + ( (text_alpha as u32 + _a) << 24) + (b+_b << 16) + (g+_g << 8) + r+_r;
+                    }
+                }
+            }
+        }
+        let sw = canvas.w as f32 / self.texture.width() as f32;
+        let sh = canvas.h as f32 / self.texture.height() as f32; 
+        println!("{} {}", sw, sh);
+        if self.cursor[0] + sw > 1.0{
+            self.cursor[0]  = -1.0;
+            self.cursor[1] += self.current_maxdepth;
+        }
+
+
+        let mut renderer = Renderer{ display: display, target: &mut self.texture.as_surface(), indices, program};
+        gl_drawbmp( &mut renderer, &canvas, self.cursor[0], self.cursor[1], sw, sh, None);
+
+        self.map.insert( _charkey, [self.cursor[0], self.cursor[1], sw, sh] );
+
+        self.cursor[0] += sw;
+        if self.cursor[1] + sh > self.current_maxdepth{ self.current_maxdepth = self.cursor[1] + sh; }
+        
+        return None;
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -79,9 +249,9 @@ impl MouseInfo{
 
 
 
-struct Renderer<'a>{
+struct Renderer<'a, T: glium::Surface>{
     display: &'a glium::Display,
-    target:  &'a mut glium::Frame,
+    target:  &'a mut T, //glium::Frame,
     indices: &'a glium::index::NoIndices,
     program: &'a glium::Program,
 }
@@ -107,6 +277,7 @@ fn generate_plane( x1: f32, x2: f32, y1: f32, y2: f32, display: &glium::Display)
 
 
 fn main(){
+    //Window and event loop initialization
 
     let mut event_loop = glutin::EventsLoop::new();
     let monitor = event_loop.get_primary_monitor();
@@ -116,16 +287,25 @@ fn main(){
                     .with_dimensions(glutin::dpi::LogicalSize{width:monitor_width / 2.0, height:monitor_height - 70.0}) //TODO Not robust and 
                     .with_title("tg_notebook");                                                                         //should be different per os and user config
 
-    let mut windowinfo = WindowInfo{focused: true, width: monitor_width / 2.0 , height: monitor_height - 70.0 };
+    let mut windowinfo = WindowInfo{focused: true, width: monitor_width / 2.0,
+                                    height: monitor_height - 70.0 };
 
     let context = glutin::ContextBuilder::new();
     let display = glium::Display::new(_window, context, &event_loop).unwrap();
 
 
-
     //NOTE use this to change the cursor we will need when we move and resize
     // https://docs.rs/glutin/0.21.0/glutin/struct.Window.html#method.set_cursor
     display.gl_window().window().set_position(glutin::dpi::LogicalPosition{x:monitor_width/2.0, y:0.0}); 
+
+
+    //Font initialization
+    let mut fontlib = FontLib::new();
+    unsafe{
+        fontlib.insert("default".to_string(), DEFAULT_FONT_BUFFER);
+        initfont( fontlib["default"] ); 
+    }
+    let mut charmap = CharMap::new(&display);
  
 
     //NOTE
@@ -176,6 +356,10 @@ fn main(){
 
     let program = glium::Program::from_source(&display, vertex_shader_src, fragment_shader_src, None).expect("Could not compile shaders");
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
+
+    charmap.insert(&display, &program, &indices, CharKey{symbol: 'Y', size: 64, font_name: None}, &fontlib);
+    charmap.insert(&display, &program, &indices, CharKey{symbol: 'B', size: 64, font_name: None}, &fontlib);
+    charmap.insert(&display, &program, &indices, CharKey{symbol: 'C', size: 64, font_name: None}, &fontlib);
 
     let mut exit = false;
     //CLEANUP remove me 
@@ -268,6 +452,16 @@ fn main(){
 
 
         }
+        {
+
+            let mut renderer = Renderer{  display: &display, 
+                                      target:  &mut target, 
+                                      indices: &indices,
+                                      program: &program,
+                                   }; 
+
+            gl_drawtexture(&mut renderer, &charmap.texture, -0.95, -0.95, None);
+        }
 
         target.finish().unwrap();
         if exit == true{break 'gameloop} 
@@ -290,14 +484,19 @@ struct TEMP_STATE{
 }
 
 
-fn TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+fn TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+    let mut texture = glium::texture::Texture2d::empty(renderer.display, 100, 100).expect("we could not make the texture");
+    {
 
+        let mut surface = texture.as_surface();
+        surface.clear_color( 1.0, 0.0, 0.0, 1.0);
+    }
+    gl_drawtexture(&mut renderer, &texture, -0.2, -0.2, None);
     
-    
+    return None;    
 }
 
-
-fn _2TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+fn _2TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
     //Info
     //Scrolling example.
 
@@ -325,7 +524,7 @@ fn _2TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseI
 }
 
 
-fn _TEMP_FN( state: &mut TEMP_STATE, mut renderer: Renderer, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
+fn _TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
     //Info
     //Test function used to move a rectangle around the screen after a click
 
@@ -389,7 +588,7 @@ struct Bmp{
 
 //TODO
 //Think about this
-fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, sw: f32, sh: f32, perspective: Option<[[f32;4];4]> )->glium::texture::Texture2d{
+fn gl_drawbmp<T: glium::Surface>( renderer: &mut Renderer<T>, bmp: &Bmp, x: f32, y: f32, sw: f32, sh: f32, perspective: Option<[[f32;4];4]> )->glium::texture::Texture2d{
     let Renderer{display, target, indices, program} = renderer;
 
     let w = bmp.w;
@@ -442,7 +641,7 @@ fn gl_drawbmp( renderer: &mut Renderer, bmp: &Bmp, x: f32, y: f32, sw: f32, sh: 
     return texture;
 }
 
-fn gl_drawtexture(renderer: &mut Renderer, texture: &glium::texture::Texture2d, x: f32, y: f32, perspective: Option<[[f32;4];4]> ){
+fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium::texture::Texture2d, x: f32, y: f32, perspective: Option<[[f32;4];4]> ){
     let Renderer{display, target, indices, program} = renderer;
 
     let w = texture.width();
