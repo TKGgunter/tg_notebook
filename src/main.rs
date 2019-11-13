@@ -14,7 +14,10 @@ use std::ptr::{null_mut, null};
 //To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
 
 //TODO
-// + render text
+// + render a sentence
+//   -- bugs size of subrect seems too large at times.
+// + render size good for many screens 
+//   --  check the dpi then tailor scaler factor appropriately.
 
 
 
@@ -94,6 +97,8 @@ impl CharMap{
         let mut canvas;
         let color = [1.0, 1.0, 1.0, 1.0];
 
+        let pixel_size = size as f32 * 3.00;
+
         unsafe{
             //construct a char buffer
             let mut char_buffer;
@@ -113,6 +118,8 @@ impl CharMap{
                 let mut descent = 0;
 
                 let mut font;
+                //TODO 
+                //make more robust to non-exsistant font names 
                 if font_name.is_none(){
                     font = fontlib["default"];
                 } else{
@@ -123,7 +130,7 @@ impl CharMap{
                 stbtt_GetFontVMetrics( &mut GLOBAL_FONTINFO as *mut stbtt_fontinfo,
                                       &mut ascent as *mut i32,
                                       &mut descent as *mut i32, null_mut());
-                scale = stbtt_ScaleForPixelHeight(&GLOBAL_FONTINFO as *const stbtt_fontinfo, size as f32);
+                scale = stbtt_ScaleForPixelHeight(&GLOBAL_FONTINFO as *const stbtt_fontinfo, pixel_size as f32);
                 let baseline = (ascent as f32 * scale ) as i32;
 
                 cwidth = (scale * (ascent - descent) as f32 ) as usize + 4;
@@ -187,9 +194,9 @@ impl CharMap{
 
 
         let mut renderer = Renderer{ display: display, target: &mut self.texture.as_surface(), indices, program};
-        gl_drawbmp( &mut renderer, &canvas, self.cursor[0], self.cursor[1], sw, sh, None);
+        gl_drawbmp( &mut renderer, &canvas, self.cursor[0], self.cursor[1], sw, sh, None );
 
-        self.map.insert( _charkey, [self.cursor[0], self.cursor[1], sw, sh] );
+        self.map.insert( _charkey, [(self.cursor[0]+1.0)/2.0, (self.cursor[1]+1.0)/2.0, sw, sh] );
 
         self.cursor[0] += sw;
         if self.cursor[1] + sh > self.current_maxdepth{ self.current_maxdepth = self.cursor[1] + sh; }
@@ -198,8 +205,43 @@ impl CharMap{
     }
 }
 
+pub fn getAdvance(character: char, size: f32)->f32{unsafe{
+    if GLOBAL_FONTINFO.data == null_mut() {
+        println!("Global font has not been set.");
+        return -1.0;
+    }
+    let mut adv = 0;
+    let scale = stbtt_ScaleForPixelHeight(&GLOBAL_FONTINFO as *const stbtt_fontinfo, size);
+    stbtt_GetCodepointHMetrics(&GLOBAL_FONTINFO as *const stbtt_fontinfo, character as i32, &mut adv as *mut i32, null_mut());
+    return (adv as f32 * scale);
+}}
 
+fn draw_char<T: glium::Surface>( renderer: &mut Renderer<T>, fontlib: &FontLib, charmap: &mut CharMap, character: char, font: Option<String>, size: u32, x: f32, y: f32, color: [f32; 4])->f32{
+     
+    let mut _font;
+    //TODO 
+    //make more robust to non-exsistant font names 
+    if font.is_none(){
+        _font = fontlib["default"];
+    } else{
+        _font = fontlib[&font.clone().unwrap()];
+    }
+    initfont( _font );
 
+    //TODO 
+    //make more robust to non-exsistant character/size/font keys are generated upon request 
+    let charkey = CharKey{ symbol: character, size: size, font_name: font };
+    let charvalue = charmap.map[&charkey]; 
+
+    gl_drawtexture(renderer, &charmap.texture, x, y,  2.0*charvalue[2]*charvalue[2]/charvalue[3], 2.0*charvalue[3], None, Some(charvalue), Some(color));
+
+    let pixel_size = size as f32 * 3.00;
+    //TODO
+    //the 1.25 term is adhoc. It was derived because the general shift did not look correct
+    return getAdvance(character, pixel_size) * 1.15 / charmap.texture.width() as f32;
+}
+fn draw_string<T: glium::Surface>( renderer: &mut Renderer<T>, fontlib: &FontLib, charmap: &mut CharMap, string: &str, color: [f32; 4], x: f32, y: f32){
+}
 
 
 
@@ -270,6 +312,29 @@ fn generate_plane( x1: f32, x2: f32, y1: f32, y2: f32, display: &glium::Display)
     let vertex4 = Vertex{ position: [x2, y1], tex_coords: [1.0, 0.0]};
     let vertex5 = Vertex{ position: [x2, y2], tex_coords: [1.0, 1.0]};
     let vertex6 = Vertex{ position: [x1, y1], tex_coords: [0.0, 0.0]};
+    let shape = vec![vertex1, vertex2, vertex3, vertex4, vertex5, vertex6];
+
+    return glium::VertexBuffer::new(display, &shape).expect("could not generate vertex buffer");
+}
+
+fn generate_plane_ex( pos_rect: [f32; 4], tex_rect: [f32; 4], display: &glium::Display)->glium::VertexBuffer<Vertex>{
+    let pos_x1 = pos_rect[0];
+    let pos_y1 = pos_rect[1];
+    let pos_x2 = pos_rect[0] + pos_rect[2];
+    let pos_y2 = tex_rect[1] + pos_rect[3];
+
+    let tex_x1 = tex_rect[0];
+    let tex_y1 = tex_rect[1];
+    let tex_x2 = tex_rect[0] + tex_rect[2];
+    let tex_y2 = tex_rect[1] + tex_rect[3];
+
+
+    let vertex1 = Vertex{ position: [pos_x1, pos_y1], tex_coords: [tex_x1, tex_y1]};
+    let vertex2 = Vertex{ position: [pos_x1, pos_y2], tex_coords: [tex_x1, tex_y2]};
+    let vertex3 = Vertex{ position: [pos_x2, pos_y2], tex_coords: [tex_x2, tex_y2]};
+    let vertex4 = Vertex{ position: [pos_x2, pos_y1], tex_coords: [tex_x2, tex_y1]};
+    let vertex5 = Vertex{ position: [pos_x2, pos_y2], tex_coords: [tex_x2, tex_y2]};
+    let vertex6 = Vertex{ position: [pos_x1, pos_y1], tex_coords: [tex_x1, tex_y1]};
     let shape = vec![vertex1, vertex2, vertex3, vertex4, vertex5, vertex6];
 
     return glium::VertexBuffer::new(display, &shape).expect("could not generate vertex buffer");
@@ -360,6 +425,8 @@ fn main(){
     charmap.insert(&display, &program, &indices, CharKey{symbol: 'Y', size: 64, font_name: None}, &fontlib);
     charmap.insert(&display, &program, &indices, CharKey{symbol: 'B', size: 64, font_name: None}, &fontlib);
     charmap.insert(&display, &program, &indices, CharKey{symbol: 'C', size: 64, font_name: None}, &fontlib);
+    charmap.insert(&display, &program, &indices, CharKey{symbol: 'C', size: 32, font_name: None}, &fontlib);
+    charmap.insert(&display, &program, &indices, CharKey{symbol: 'C', size: 16, font_name: None}, &fontlib);
 
     let mut exit = false;
     //CLEANUP remove me 
@@ -460,7 +527,15 @@ fn main(){
                                       program: &program,
                                    }; 
 
-            gl_drawtexture(&mut renderer, &charmap.texture, -0.95, -0.95, None);
+            gl_drawtexture(&mut renderer, &charmap.texture, -0.95, -0.95, 1.0, 1.0, None, None, None);
+            gl_drawtexture(&mut renderer, &charmap.texture, -0.20, -0.14,  2.0*0.09, 2.0*0.09, None, Some([0.0, 0.0, 0.09, 0.09]), Some([0.2, 0.2, 0.2, 1.0]));
+
+            let t = draw_char( &mut renderer, &fontlib, &mut charmap, 'C', None, 16, -0.8, -0.14, [1.0; 4]);
+            draw_char( &mut renderer, &fontlib, &mut charmap, 'C', None, 16, -0.8 + t , -0.14, [1.0;4]);
+
+            let t = draw_char( &mut renderer, &fontlib, &mut charmap, 'Y', None, 64, -0.8, 0.14, [1.0; 4]);
+            draw_char( &mut renderer, &fontlib, &mut charmap, 'C', None, 64, -0.8 + t , 0.14, [1.0;4]);
+           //YB 
         }
 
         target.finish().unwrap();
@@ -491,7 +566,7 @@ fn TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>
         let mut surface = texture.as_surface();
         surface.clear_color( 1.0, 0.0, 0.0, 1.0);
     }
-    gl_drawtexture(&mut renderer, &texture, -0.2, -0.2, None);
+    gl_drawtexture(&mut renderer, &texture, -0.2, -0.2, 1.0, 1.0, None, None, None);
     
     return None;    
 }
@@ -575,7 +650,7 @@ fn _TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T
     } 
 
 
-    gl_drawtexture(&mut renderer, texture.unwrap(), state.x, state.y, None);
+    gl_drawtexture(&mut renderer, texture.unwrap(), state.x, state.y, 1.0, 1.0, None, None, None);
     return None;
 }
 
@@ -641,7 +716,7 @@ fn gl_drawbmp<T: glium::Surface>( renderer: &mut Renderer<T>, bmp: &Bmp, x: f32,
     return texture;
 }
 
-fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium::texture::Texture2d, x: f32, y: f32, perspective: Option<[[f32;4];4]> ){
+fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium::texture::Texture2d, x: f32, y: f32, sw: f32, sh: f32, perspective: Option<[[f32;4];4]>, subrect: Option<[f32;4]>, color: Option<[f32; 4]>){
     let Renderer{display, target, indices, program} = renderer;
 
     let w = texture.width();
@@ -657,8 +732,8 @@ fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium
                           );
     //TODO
     //need an x-axis and y-axis scaling term
-    let     transform = Matrix4::new(1.0, 0.0, 0.0, 0.0,
-                                     0.0, 1.0, 0.0, 0.0,
+    let     transform = Matrix4::new( sw, 0.0, 0.0, 0.0,
+                                     0.0,  sh, 0.0, 0.0,
                                      0.0, 0.0, 1.0, 0.0,
                                        x,   y, 1.0, 1.0);
      
@@ -683,9 +758,19 @@ fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium
         };
         
         //TODO This is temp
-        let vertexbuffer = generate_plane(0.0, ratio, 0.0, 1.0, display);
+        let vertexbuffer = generate_plane_ex([0.0, 0.0, ratio, 1.0], subrect.unwrap_or([0.0, 0.0, 1.0, 1.0]), display);
 
-        target.draw(&vertexbuffer, *indices, program, &uniforms, &Default::default()).unwrap();
+        //let blend = glium::draw_parameters::Blend{color: glium::BlendingFunction::AlwaysReplace, alpha: glium::BlendingFunction::Min, constant_value: (0.0, 1.0, 0.0, 1.0)};
+        let mut draw_params : glium::draw_parameters::DrawParameters =  Default::default();
+        draw_params.blend = glium::Blend::alpha_blending();
+
+        if color.is_some(){
+            let [r, g, b, a] = color.unwrap();
+            draw_params.blend.color = glium::BlendingFunction::Addition{ source: glium::LinearBlendingFactor::ConstantColor, destination: glium::LinearBlendingFactor::One};
+            draw_params.blend.constant_value = (r, g, b, a);
+        }
+
+        target.draw(&vertexbuffer, *indices, program, &uniforms, &draw_params).unwrap();
     }
 }
 
