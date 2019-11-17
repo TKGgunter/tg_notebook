@@ -453,8 +453,10 @@ fn main(){
             dll_path = _dll_path.to_str().expect("Could not convert dll path to string!!!").to_string();
         }
         else if cfg!(target_os = "linux"){
+
             let _split_path : Vec<&str> = dll_source_path.split("/").collect();
             for (i, it) in _split_path.iter().enumerate(){
+
                 if i < _split_path.len() -1 {
                     dll_path = dll_path + *it + "/";
                 } else {
@@ -462,13 +464,23 @@ fn main(){
                     dll_path = dll_path + "lib" + &it[..l-3] + ".so";
                 }
             }
+
         } else{
             panic!("Operating system not supported!!");
         }
     } else { //NOTE: If dll path is given
         dll_path += &args[2];
     }
-    let mut app = open_lib(&dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
+
+    let copy_dll_path;
+    if cfg!(target_os = "windows") {
+        copy_dll_path = "temp.dll".to_string();
+    } else{
+        copy_dll_path = "temp.so".to_string();
+    }
+
+    std::fs::copy(&dll_path, &copy_dll_path);
+    let mut app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
 
 
 
@@ -575,28 +587,29 @@ fn main(){
 
 
     //Rasterizing most used characters
-    for it in "abcdefghijklminopqrstuvwxyz+=?/".chars(){
+    for it in "abcdefghijklminopqrstuvwxyz+=?/0123456789".chars(){
         charmap.insert(&display, &program, &indices, CharKey{symbol: it, size: 22, font_name: None}, &fontlib);
         charmap.insert(&display, &program, &indices, CharKey{symbol: it.to_ascii_uppercase(), size: 22, font_name: None}, &fontlib);
     }
 
-    for it in "abcdefghijklminopqrstuvwxyz+=?/".chars(){
+    for it in "abcdefghijklminopqrstuvwxyz+=?/0123456789".chars(){
         charmap.insert(&display, &program, &indices, CharKey{symbol: it, size: 16, font_name: None}, &fontlib);
         charmap.insert(&display, &program, &indices, CharKey{symbol: it.to_ascii_uppercase(), size: 16, font_name: None}, &fontlib);
     }
 
 
     let mut globalstorage = GlobalStorage::new();
-    let mut interactive_info = Default::default();
+    let mut interactive_info = Default::default(); //TODO
 
 
     let mut exit = false;
     //CLEANUP remove me 
-    let mut temp_texture : Option<glium::texture::Texture2d> = None;
 
     let mut last_modified = std::fs::metadata(&dll_path).unwrap().modified().unwrap();
     let mut last_dll_size = std::fs::metadata(&dll_path).unwrap().len();
     let mut debug_infostate = InfoState::new();
+    debug_infostate.most_recent_load_stamp = format!("{}", std::time::Instant::now());
+
     'gameloop: loop{
 
 
@@ -604,17 +617,33 @@ fn main(){
         {
             if modified > last_modified && last_dll_size == new_dll_size_bytes 
             { 
-                //NOTE
+                //NOTE(Question)
                 //If we close lib do we retain previously loaded function pointers?
-                //TODO we want update this every frame
 
-                //TODO
-                //should happen in debug_main
+                debug_infostate.most_recent_load_stamp = format!("{:?}", std::time::Instant::now());
                 println!("{}", "Updating dll!!!");
                 close_lib(&app);
                 drop(app);
 
-                app = open_lib(&dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
+                //////////////////////
+                //TODO this is stupid 
+                let mut i_loop = 0;
+                loop {
+                    match std::fs::copy(&dll_path, &copy_dll_path){
+                        Ok(_) =>{ break; },
+                        Err(code) =>{  
+                            i_loop += 1;
+                            if false {
+                                panic!("dll could not be copied failed with non-supported error {}", code);  
+                            }
+                        }
+                    }
+                }
+                println!("How many loops where needed until I could copy the file? {}", i_loop);
+                //the above is stupid
+                //////////////////////
+
+                app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
                 get_function_from_source( dll_source_path, &app, &mut instructionbuffer, &display);
                 last_modified = modified;
 
@@ -690,6 +719,10 @@ fn main(){
 
 
         set_windoinfo(windowinfo);
+
+
+        logic_panel(&mut debug_infostate, &mut instructionbuffer, &mouseinfo);
+
         
         for i in 0..instructionbuffer.ids.len(){//Run new dll functions
             if instructionbuffer.initialized[i] == false || instructionbuffer.interactive[i]{ 
@@ -707,42 +740,12 @@ fn main(){
         target.clear_color(0.0, 0.0, 0.0, 1.0);
         {
 
-            let renderer = Renderer{  display: &display, 
-                                      target:  &mut target, 
-                                      indices: &indices,
-                                      program: &program,
-                                   }; 
-
-
-
-            if temp_texture.is_none() {
-                temp_texture = TEMP_FN(&mut temp_state, renderer, &mouseinfo, None);
-            } else {
-                TEMP_FN(&mut temp_state, renderer, &mouseinfo, temp_texture.as_mut());
-            }
-
-
-        }
-        {
-
             let mut renderer = Renderer{  display: &display, 
                                       target:  &mut target, 
                                       indices: &indices,
                                       program: &program,
                                    }; 
 
-            gl_drawtexture(&mut renderer, &charmap.texture, -0.95, -0.95, 1.0, 1.0, None, None, None);
-            gl_drawtexture(&mut renderer, &charmap.texture, -0.20, -0.14,  2.0*0.09, 2.0*0.09, None, Some([0.0, 0.0, 0.09, 0.09]), Some([0.2, 0.2, 0.2, 1.0]));
-
-            let t = draw_char( &mut renderer, &fontlib, &mut charmap, 'C', None, 16, -0.8, -0.14, [1.0; 4]);
-            draw_char( &mut renderer, &fontlib, &mut charmap, 'C', None, 16, -0.8 + t , -0.14, [1.0;4]);
-
-            let t = draw_char( &mut renderer, &fontlib, &mut charmap, 'Y', None, 64, -0.8, 0.14, [1.0; 4]);
-            draw_char( &mut renderer, &fontlib, &mut charmap, 'C', None, 64, -0.8 + t , 0.14, [1.0;4]);
-            draw_string( &mut renderer, &fontlib, &mut charmap, "abcdxyzefg", None, 16, 0.5 , 0.14, [1.0;4], Some(0.50));
-
-
-           //
            render_panel( &mut instructionbuffer, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
            render_ui( &mut debug_infostate, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
         }
@@ -770,6 +773,29 @@ struct TEMP_STATE{
 
 
 
+fn logic_panel( state: &mut InfoState, instructionbuffer: &mut InstructionBuffer, mouseinfo: &MouseInfo,){
+    for i in 0..instructionbuffer.len(){
+       if instructionbuffer.pos_rect[i][0] == 0.0 && 
+          instructionbuffer.pos_rect[i][1] == 0.0 && 
+          instructionbuffer.pos_rect[i][2] == 0.0 && 
+          instructionbuffer.pos_rect[i][3] == 0.0 {
+        
+              continue;
+        }
+        //Bring sub frame into focus
+        if mouseinfo.lbutton == ButtonStatus::Down && 
+           in_rect( mouseinfo.x as i32, mouseinfo.y as i32,  
+           convert_screen_coor_to_pixel_corr(instructionbuffer.pos_rect[i]) ) {
+            
+            instructionbuffer.infocus[i] = true;
+            state.activated_function = instructionbuffer.ids[i].clone();
+            for j in 0..instructionbuffer.len() {
+                if i !=j { instructionbuffer.infocus[j] = false; }
+            }
+        }
+    }
+}
+
 fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, renderer: &mut Renderer<T>, mouseinfo: &MouseInfo, fontlib: &FontLib, charmap: &mut CharMap ){
     //TODO
     //clean up these hard coded values
@@ -784,8 +810,9 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
 
 
     for (i, it) in instructionbuffer.textures.iter_mut().enumerate(){
-        let _i = i + 1;
-        gl_drawrect(renderer, -0.7, top-header_height, DEFAULT_TEXTURE_WIDTH_FRAC, header_height, [0.07, 0.07, 0.07, 1.0], None);
+        let _i = (i + 1) as f32;
+        gl_drawrect(renderer, -0.7, top - _i * header_height - (_i - 1.0) * height, DEFAULT_TEXTURE_WIDTH_FRAC, header_height, [0.07, 0.07, 0.07, 1.0], None);
+        draw_string(renderer, fontlib, charmap, &instructionbuffer.ids[i], None, 16, -0.68, top - _i * header_height - (_i - 1.0) * height - 0.01, [1.0; 4], None);
         {
             let mut surface = it.as_surface();
             surface.clear_color(C_LIGHTBLACK[0], C_LIGHTBLACK[1], C_LIGHTBLACK[2], C_LIGHTBLACK[3]);
@@ -806,7 +833,13 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
 
             }
         }
-        gl_drawtexture(renderer, it, -0.7, top - _i as f32 * header_height - _i as f32 * height, 1.0, 1.0, None, None, None);
+
+        let pos_y = top - _i * header_height - _i * height;
+        gl_drawtexture(renderer, it, -0.7, pos_y, 1.0, 1.0, None, None, None);
+        instructionbuffer.pos_rect[i][0] = -0.7;
+        instructionbuffer.pos_rect[i][1] = pos_y;
+        instructionbuffer.pos_rect[i][2] = DEFAULT_TEXTURE_WIDTH_FRAC;
+        instructionbuffer.pos_rect[i][3] = DEFAULT_TEXTURE_HEIGHT_FRAC;
     }
 
 
@@ -837,6 +870,7 @@ struct InfoState{
     activated_function: String,
     errors: Vec<String>,
     scrollthumb_rect: [f32; 4],
+    most_recent_load_stamp: String,
 }
 
 impl InfoState{
@@ -845,6 +879,7 @@ impl InfoState{
             activated_function: String::with_capacity(250),
             errors: vec![],
             scrollthumb_rect : [0.98, -0.92, 0.15, 1.82],
+            most_recent_load_stamp: String::new(),
         }
     }
 }
@@ -863,8 +898,8 @@ fn render_ui<T: glium::Surface>( state: &InfoState, renderer: &mut Renderer<T>, 
     if state.activated_function.len() == 0 { //Denote activated function
         draw_string(renderer, fontlib, charmap, "----- ", None, 16, -0.01, 0.94, C_WHITE, None);
     } else {
-        let string = format!("{}", state.activated_function);
-        draw_string(renderer, fontlib, charmap, &string, None, 16, -0.01, 0.94, C_WHITE, None);
+        let string = &state.activated_function;
+        draw_string(renderer, fontlib, charmap, string, None, 16, -0.01, 0.94, C_WHITE, None);
     }
 
     { //Errors
@@ -876,7 +911,7 @@ fn render_ui<T: glium::Surface>( state: &InfoState, renderer: &mut Renderer<T>, 
             let string = format!("{}", state.errors[state.errors.len() - 1]);
             draw_string(renderer, fontlib, charmap, &string, None, 16, -0.01, -1.005, C_RED, None);
         } else {
-            draw_string(renderer, fontlib, charmap, "NO ERRORS", None, 16, -0.01, -1.005, C_BLACK, None);
+            draw_string(renderer, fontlib, charmap, &state.most_recent_load_stamp , None, 16, -0.01, -1.005, C_BLACK, None);
         } 
     }
 }
@@ -921,61 +956,18 @@ fn _2TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<
     return None;
 }
 
-
-fn _TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
-    //Info
-    //Test function used to move a rectangle around the screen after a click
-
-
-    if state.init == false{
-        state.init = true;
-        state.box_in_focus = false;
-        state.w    = 1000.0;
-        state.h    = 1000.0;
-    }
-
-
-    if texture.is_none(){
-        let w = state.w as u32;
-        let h = state.h as u32;
-
-        let bmp = Bmp{ w: w, h: h, buffer: vec![150u8; (4*w*h) as usize]};
-        return Some(gl_drawbmp(&mut renderer, &bmp, 0.0, 0.0, 1.0, 1.0, None));
-    }
-
-
-
-    fn convert_screen_coor_to_pixel_corr(rect: [f64;4])-> [i32; 4]{
-        let WindowInfo{focused, width, height} = clone_windowinfo();
-        
-        let mut rt = [0i32; 4];
-        rt[0] = ( ( 1.0 + rect[0] ) * width / 2.0) as i32;
-        rt[1] = ( ( 1.0 + rect[1] ) * height / 2.0) as i32;
-        rt[2] = ( rect[2] * width / 2.0) as i32;
-        rt[3] = ( rect[3] * height / 2.0) as i32;
-       
-        rt
-    }
-
-    //Box movement test
-    if mouseinfo.lbutton == ButtonStatus::Down && in_rect( mouseinfo.x as i32, mouseinfo.y as i32,  
-                                                  convert_screen_coor_to_pixel_corr([state.x as f64, state.y as f64, 1.0, 1.0]) ) {
-
-        let WindowInfo{focused, width, height} = clone_windowinfo();
-
-        if state.box_in_focus == true {
-            state.x += 2.0*(mouseinfo.x - state.prev_mouse[0]) as f32 / width as f32;
-            state.y += 2.0*(mouseinfo.y - state.prev_mouse[1]) as f32 / height as f32;
-        } else {
-            state.box_in_focus = true;
-        }
-        state.prev_mouse = [ mouseinfo.x, mouseinfo.y];
-    } 
-
-
-    gl_drawtexture(&mut renderer, texture.unwrap(), state.x, state.y, 1.0, 1.0, None, None, None);
-    return None;
+pub fn convert_screen_coor_to_pixel_corr(rect: [f32;4])-> [i32; 4]{
+    let WindowInfo{focused, width, height} = clone_windowinfo();
+    
+    let mut rt = [0i32; 4];
+    rt[0] = ( ( 1.0 + rect[0] as f64 ) * width / 2.0) as i32;
+    rt[1] = ( ( 1.0 + rect[1] as f64 ) * height / 2.0) as i32;
+    rt[2] = ( rect[2] as f64 * width / 2.0) as i32;
+    rt[3] = ( rect[3] as f64 * height / 2.0) as i32;
+   
+    rt
 }
+
 
 //TODO TEMP
 struct Bmp{
@@ -1231,6 +1223,7 @@ fn get_function_from_source( dll_source_path: &str, app: &DyLib, instructionbuff
                 if instructionbuffer.fns_source[index] != function_scrs[i]{//check if source has changed
                     instructionbuffer.fns_source[index]= function_scrs[i].clone();
                     instructionbuffer.initialized[index] = false;
+                    instructionbuffer.render_instructions[index].clear();
                 } else {
                     instructionbuffer.initialized[index] = true;//TODO check this
                 }

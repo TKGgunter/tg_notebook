@@ -22,6 +22,8 @@ fn UD_test(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage
     ri.println("Testing Testing 1,2,3");
     ri.println("Ready for blast off?");
     ri.println("All systems check!");
+    ri.println("Blastoff!!!!");
+    ri.println("Blastoff!!!!");
     return Ok(());
 }
 

@@ -19,11 +19,12 @@ pub struct InstructionBuffer{
     pub textures     : Vec<Texture2d>,
     pub fns          : Vec<UserFn>,
     pub fns_source   : Vec<String>,
-    pub translations : Vec<[f32; 2]>,
+    pub pos_rect     : Vec<[f32; 4]>,
 
     pub render_instructions: Vec<RenderInstructions>,
     pub localstorage       : Vec<LocalStorage>,
     pub interactive        : Vec<bool>,  //TODO we could but prob should not use InteractiveInfo infocus to help with moving and expanding
+    pub infocus            : Vec<bool>,  
 
     pub ids               : Vec<String>,
 
@@ -39,11 +40,12 @@ impl InstructionBuffer{
                             textures     : Vec::new(), 
                             fns          : Vec::new(), 
                             fns_source   : Vec::new(), 
-                            translations : Vec::new(), 
+                            pos_rect     : Vec::new(), 
                             render_instructions: Vec::new(),
                             localstorage       : Vec::new(),
                             ids                : Vec::new(),
                             interactive        : Vec::new(),
+                            infocus            : Vec::new(),
                             machine_edit_canvas_mode: Vec::new(), //i don't like this name
                             src_path: String::new(),
         }
@@ -58,14 +60,13 @@ impl InstructionBuffer{
         self.fns_source.push(source); 
 
         let l = self.bitmaps.len();
-        let x = -1.0 * (l%2) as f32 + 0.2 * l as f32;
-        let y = -1.0 + 0.1*(l/2) as f32;
-        self.translations.push([x, y]);
+        self.pos_rect.push([0.0;4]);
 
         self.render_instructions.push( Default::default() );
         self.localstorage.push(LocalStorage::new());
         self.ids.push(id); 
         self.interactive.push(false);
+        self.infocus.push(false);
         self.machine_edit_canvas_mode.push(false); //i don't like this name
 
         //CLEANUP
