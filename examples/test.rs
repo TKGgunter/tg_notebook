@@ -19,6 +19,9 @@ use interaction_tools::*;
 
 #[no_mangle]
 fn UD_test(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
+    ri.println("Testing Testing 1,2,3");
+    ri.println("Ready for blast off?");
+    ri.println("All systems check!");
     return Ok(());
 }
 

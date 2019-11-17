@@ -16,10 +16,10 @@ use lib::dynamic_lib_loading;
 use lib::dynamic_lib_loading::{open_lib, get_fn, get_error, close_lib, DyLib};
 use lib::memory_tools::{GlobalStorage, LocalStorage};
 use lib::interaction_tools::{InteractiveInfo};
-use lib::render_tools::{Bitmap, RenderInstructions};
+use lib::render_tools::{Bitmap, RenderInstructions, BitmapContainer};
 
 mod instructions;
-
+use instructions::InstructionBuffer;
 
 //NOTE
 //what is the time cost of loading various resolutions of textures all the time : it takes about 2 millis to generate a high res bmp
@@ -45,10 +45,14 @@ const C_GREEN : [f32; 4] = [0.0, 1.0, 0.0, 1.0];
 const C_BLUE  : [f32; 4] = [0.0, 0.0, 1.0, 1.0];
 const C_GREY  : [f32; 4] = [0.5, 0.5, 0.5, 1.0];
 const C_DARKGREY  : [f32; 4] = [0.15, 0.15, 0.15, 1.0];
-const C_LIGHTBLACK : [f32; 4] = [0.05, 0.05, 0.05, 1.0];
+const C_LIGHTBLACK : [f32; 4] = [0.025, 0.025, 0.025, 1.0];
 const C_PURPLE: [f32; 4] = [0.5, 0.0, 0.5, 1.0];
 
-type UserFn = fn(&mut Bitmap, &mut RenderInstructions, &mut GlobalStorage, &mut LocalStorage, &InteractiveInfo)->Result<(), String>;
+const DEFAULT_TEXTURE_WIDTH_FRAC  : f32 = 1.7;
+const DEFAULT_TEXTURE_HEIGHT_FRAC : f32 = 0.45;
+
+
+type UserFn = fn(&mut BitmapContainer, &mut RenderInstructions, &mut GlobalStorage, &mut LocalStorage, &InteractiveInfo)->Result<(), String>;
 
 
 
@@ -292,23 +296,26 @@ fn draw_char<T: glium::Surface>( renderer: &mut Renderer<T>, fontlib: &FontLib, 
     gl_drawtexture(renderer, &charmap.texture, x, y,  2.0*charvalue[2]*charvalue[2]/charvalue[3], 2.0*charvalue[3], None, Some(charvalue), Some(color));
 
     let pixel_size = size as f32 * 3.00;
-    return get_advance(character, pixel_size) * 1.0 / charmap.texture.width() as f32;
+    //return get_advance(character, pixel_size) * 1.0 / charmap.texture.width() as f32;
+    return get_advance(character, pixel_size) * 1.0 / renderer.target.get_dimensions().0 as f32;
 }
 
 fn draw_string<T: glium::Surface>( renderer: &mut Renderer<T>, fontlib: &FontLib, charmap: &mut CharMap, string: &str, font: Option<String>, size: u32, 
-                                   x: f32, y: f32, color: [f32; 4], _max_length: Option<f32>){
+                                   x: f32, y: f32, color: [f32; 4], _max_length: Option<f32>)->f32{
     let mut delta_x = 0.0;
     let mut delta_y = 0.0;
     let max_length = _max_length.unwrap_or(std::f32::MAX);
+
+    let const_delta_y = size as f32 * 3.00 * 0.99 / renderer.target.get_dimensions().1 as f32;
 
     for _char in string.chars(){
         delta_x += draw_char( renderer, fontlib, charmap, _char, font.clone(), size, x + delta_x, y - delta_y, color.clone()); 
         if delta_x > max_length{
             delta_x = 0.0;
-            delta_y += size  as f32 * 3.00 * 0.76 / charmap.texture.height() as f32;
+            delta_y += const_delta_y; //size as f32 * 3.00 * 0.99 / renderer.target.get_dimensions().1 as f32;
         }
     }
-
+    return delta_y + const_delta_y;
 }
 
 
@@ -462,7 +469,11 @@ fn main(){
         dll_path += &args[2];
     }
     let mut app = open_lib(&dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
-    //get_function_from_source( dll_source_path, &app, &mut instructionbuffer, &display);
+
+
+
+
+
 
 
 
@@ -488,6 +499,16 @@ fn main(){
     display.gl_window().window().set_position(glutin::dpi::LogicalPosition{x:monitor_width/2.0, y:0.0}); 
 
 
+
+
+    //Initializing instruction buffer and getting initial functions from dll
+    let mut instructionbuffer = InstructionBuffer::new();
+    get_function_from_source( dll_source_path, &app, &mut instructionbuffer, &display );
+
+
+
+
+
     //Font initialization
     let mut fontlib = FontLib::new();
     unsafe{
@@ -495,6 +516,12 @@ fn main(){
         initfont( fontlib["default"] ); 
     }
     let mut charmap = CharMap::new(&display);
+
+
+
+
+
+
  
 
     //NOTE
@@ -546,6 +573,8 @@ fn main(){
     let program = glium::Program::from_source(&display, vertex_shader_src, fragment_shader_src, None).expect("Could not compile shaders");
     let indices = glium::index::NoIndices(glium::index::PrimitiveType::TrianglesList);
 
+
+    //Rasterizing most used characters
     for it in "abcdefghijklminopqrstuvwxyz+=?/".chars(){
         charmap.insert(&display, &program, &indices, CharKey{symbol: it, size: 22, font_name: None}, &fontlib);
         charmap.insert(&display, &program, &indices, CharKey{symbol: it.to_ascii_uppercase(), size: 22, font_name: None}, &fontlib);
@@ -555,6 +584,11 @@ fn main(){
         charmap.insert(&display, &program, &indices, CharKey{symbol: it, size: 16, font_name: None}, &fontlib);
         charmap.insert(&display, &program, &indices, CharKey{symbol: it.to_ascii_uppercase(), size: 16, font_name: None}, &fontlib);
     }
+
+
+    let mut globalstorage = GlobalStorage::new();
+    let mut interactive_info = Default::default();
+
 
     let mut exit = false;
     //CLEANUP remove me 
@@ -581,7 +615,7 @@ fn main(){
                 drop(app);
 
                 app = open_lib(&dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
-                //get_function_from_source( dll_source_path, &app, &mut instructionbuffer, &display);
+                get_function_from_source( dll_source_path, &app, &mut instructionbuffer, &display);
                 last_modified = modified;
 
             }
@@ -656,6 +690,17 @@ fn main(){
 
 
         set_windoinfo(windowinfo);
+        
+        for i in 0..instructionbuffer.ids.len(){//Run new dll functions
+            if instructionbuffer.initialized[i] == false || instructionbuffer.interactive[i]{ 
+                instructionbuffer.fns[i]( &mut instructionbuffer.bitmaps[i], 
+                                          &mut instructionbuffer.render_instructions[i], 
+                                          &mut globalstorage, 
+                                          &mut instructionbuffer.localstorage[i], 
+                                          & interactive_info);
+                instructionbuffer.initialized[i] = true;
+            }
+        }
 
 
         let mut target = display.draw();
@@ -698,7 +743,7 @@ fn main(){
 
 
            //
-           render_panel( &mut InfoState::new(), &mut renderer, &mouseinfo, &fontlib, &mut charmap);
+           render_panel( &mut instructionbuffer, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
            render_ui( &mut debug_infostate, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
         }
 
@@ -723,23 +768,68 @@ struct TEMP_STATE{
 }
 
 
-fn render_panel<T: glium::Surface>( state: &InfoState, renderer: &mut Renderer<T>, mouseinfo: &MouseInfo, fontlib: &FontLib, charmap: &mut CharMap ){
-    let height = 0.45;
-    let header_height = 0.08;
-    gl_drawrect(renderer, -0.7, 0.945-header_height,     2.0 - 0.3, header_height, [0.07, 0.07, 0.07, 1.0], None);
-    gl_drawrect(renderer, -0.7, 0.945-height-header_height, 2.0 - 0.3, height, C_LIGHTBLACK, None);
 
+
+fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, renderer: &mut Renderer<T>, mouseinfo: &MouseInfo, fontlib: &FontLib, charmap: &mut CharMap ){
+    //TODO
+    //clean up these hard coded values
+    let height = DEFAULT_TEXTURE_HEIGHT_FRAC;
+    let header_height = 0.05;
+    let top = 0.945;
+
+    //EXAMPLE header rect and body rect
+    //gl_drawrect(renderer, -0.7, 0.945-header_height,     2.0 - 0.3, header_height, [0.07, 0.07, 0.07, 1.0], None);
+    //gl_drawrect(renderer, -0.7, 0.945-height-header_height, 2.0 - 0.3, height, C_LIGHTBLACK, None);
+    //
+
+
+    for (i, it) in instructionbuffer.textures.iter_mut().enumerate(){
+        let _i = i + 1;
+        gl_drawrect(renderer, -0.7, top-header_height, DEFAULT_TEXTURE_WIDTH_FRAC, header_height, [0.07, 0.07, 0.07, 1.0], None);
+        {
+            let mut surface = it.as_surface();
+            surface.clear_color(C_LIGHTBLACK[0], C_LIGHTBLACK[1], C_LIGHTBLACK[2], C_LIGHTBLACK[3]);
+            let mut _renderer = Renderer{ display: renderer.display, target: &mut surface, indices: renderer.indices, program: renderer.program};
+
+
+            //TODO
+            //draw things to the texture.
+            let x = -0.99;
+            let mut y = 0.85;
+            for renderable in instructionbuffer.render_instructions[i].buffer.iter(){
+
+                if renderable.print_string{
+                    let color = [renderable.color[0], renderable.color[1], renderable.color[2], renderable.alpha];
+                    let delta = draw_string( &mut _renderer, fontlib, charmap, &renderable.char_buffer, None, renderable.font_size, x, y, color, Some(1.85));
+                    y -= delta;
+                }
+
+            }
+        }
+        gl_drawtexture(renderer, it, -0.7, top - _i as f32 * header_height - _i as f32 * height, 1.0, 1.0, None, None, None);
+    }
+
+
+
+    gl_drawrect(renderer, -0.7, top-2.0*header_height-height-0.01,  2.0 - 0.3, header_height, [0.07, 0.07, 0.07, 1.0], None);//Panel Header
+    draw_string(renderer, fontlib, charmap, "ASDFsadfasdfasdf;kl", None, 16, -0.68,  top-2.0*header_height-height-0.02, C_WHITE, None);
     {
-        let texture = glium::texture::Texture2d::empty(renderer.display, 1000, 1000).expect("texture could not be created.");
+        let (target_w, target_h) = renderer.target.get_dimensions();
+        
+        let texture = glium::texture::Texture2d::empty(renderer.display, (target_w as f32 * DEFAULT_TEXTURE_WIDTH_FRAC) as _, (target_h as f32 * height) as _ ).expect("texture could not be created.");
         {
             let mut surface = texture.as_surface();
-            surface.clear_color(0.0, 0.0, 0.0, 1.0);
+            surface.clear_color(C_LIGHTBLACK[0], C_LIGHTBLACK[1], C_LIGHTBLACK[2], C_LIGHTBLACK[3]);
 
 
+            //TODO
+            //if infocus and there are other things to render that is outside of view.
             let mut _renderer = Renderer{ display: renderer.display, target: &mut surface, indices: renderer.indices, program: renderer.program};
-            draw_string(&mut _renderer, fontlib, charmap, "ASDF", None, 16, -0.01, 0.94, C_WHITE, None);
+            draw_string(&mut _renderer, fontlib, charmap, "ASDFsadfasdfasdf;kl", None, 19, -0.9, 0.80, C_WHITE, Some(1.85));
+            gl_drawrect(&mut _renderer, 0.97, -1.0, 0.1, 2.0, C_GREY, None);
+            gl_drawrect(&mut _renderer, 0.97, -0.99, 0.1, 1.98, C_GREEN, None);
         }
-        gl_drawtexture(renderer, &texture, -1.1, -1.1, 2.0, 2.0, None, None, None);
+        gl_drawtexture(renderer, &texture, -0.7, top-2.0*header_height-2.0*height-0.01, 1.0, 1.0 , None, None, None);
     }
 }
 
@@ -754,7 +844,7 @@ impl InfoState{
         InfoState{
             activated_function: String::with_capacity(250),
             errors: vec![],
-            scrollthumb_rect : [0.98, -0.98, 0.15, 1.96],
+            scrollthumb_rect : [0.98, -0.92, 0.15, 1.82],
         }
     }
 }
@@ -764,7 +854,7 @@ fn render_ui<T: glium::Surface>( state: &InfoState, renderer: &mut Renderer<T>, 
     gl_drawrect(renderer, -0.7, -1.0, 0.01, 2.0, C_GREY, None); // Line that divides the list of functions and the function outputs
     
 
-    gl_drawrect(renderer, 0.98, -1.0, 0.5, 2.0, C_GREY, None);     //scroll bar
+    gl_drawrect(renderer, 0.98, -0.94, 0.1, 1.92, C_GREY, None);     //scroll bar
     {
         let [x, y, w, h] = state.scrollthumb_rect;
         gl_drawrect(renderer, x, y, w, h, C_PURPLE, None);  //scroll thumb 
@@ -958,7 +1048,8 @@ fn gl_drawrect<T: glium::Surface>(renderer: &mut Renderer<T>, x: f32, y: f32, sw
         let mut surface = texture.as_surface();
         surface.clear_color( r, g, b, a);
     }
-    gl_drawtexture(renderer, &texture, x, y, sw, sh, None, None, None);
+    let (_w, _h) = renderer.target.get_dimensions();
+    gl_drawtexture(renderer, &texture, x, y, sw * (_w as f32)/100.0, sh * (_h as f32) / 100.0, None, None, None);
 
 }
 
@@ -970,7 +1061,9 @@ fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium
     let w = texture.width();
     let h = texture.height();
 
-    let ratio = w as f32 / h as f32;
+    let (display_w, display_h) = target.get_dimensions();
+    let ratio_w = w as f32 / display_w as f32;
+    let ratio_h = h as f32 / display_h as f32;
 
     let mut _perspective = perspective.unwrap_or(
                           [  [1.0, 0.0, 0.0, 0.0,],
@@ -1006,7 +1099,8 @@ fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium
         };
         
         //TODO This is temp
-        let vertexbuffer = generate_plane_ex([0.0, 0.0, ratio, 1.0], subrect.unwrap_or([0.0, 0.0, 1.0, 1.0]), display);
+        let vertexbuffer = generate_plane_ex([0.0, 0.0, ratio_w, ratio_h], subrect.unwrap_or([0.0, 0.0, 1.0, 1.0]), display);
+        //let vertexbuffer = generate_plane_ex([0.0, 0.0, ratio, 1.0], subrect.unwrap_or([0.0, 0.0, 1.0, 1.0]), display);
 
         //let blend = glium::draw_parameters::Blend{color: glium::BlendingFunction::AlwaysReplace, alpha: glium::BlendingFunction::Min, constant_value: (0.0, 1.0, 0.0, 1.0)};
         let mut draw_params : glium::draw_parameters::DrawParameters =  Default::default();
@@ -1059,7 +1153,110 @@ pub fn in_rectf32(x: f32, y: f32, rect: [f32;4])->bool{
 
 
 
+fn get_function_from_source( dll_source_path: &str, app: &DyLib, instructionbuffer: &mut InstructionBuffer, display: &glium::Display ){
 
+    use std::io::prelude::*;
+    let mut f = std::fs::File::open(dll_source_path).expect("Source file does not exist.");
+    let mut str_file = String::new();
+    f.read_to_string(&mut str_file);
+    let mut primed_ud_fn_name = false;
+    let mut eat_source = false;
+    let mut function_names = vec![];
+    let mut function_scrs = vec![];
+
+
+    //TODO
+    //we need to check for changes in the source
+    for it in str_file.lines(){
+        if primed_ud_fn_name {
+
+            //NOTE
+            //primed meaning that the previous line contains '#[no_mangle]' this is one of two keys
+            //we use to determine if a we are to try and load a function.  '#[no_mangle]' is needed
+            //so that we can find the function by name within the dll/so file.
+            primed_ud_fn_name = false;
+            let mut function_name_buffer = vec!['U', 'D', '_']; //TODO Current prefix for function of interest.
+            let prefix = "fn UD_";
+
+
+            if it.contains(prefix){//NOTE Should maybe be begins instead of constains....
+
+                let seq_must_meet :Vec<char>= prefix.chars().collect();
+                let mut seq_cursor = 0;
+                let mut seq_good = false;
+
+
+                for jt in it.chars(){
+                    if seq_good == false { 
+                        if seq_must_meet[seq_cursor] == jt { 
+                            seq_cursor += 1;
+                            if seq_cursor == seq_must_meet.len() { seq_good = true;}
+                        }
+                    } else {
+                        if jt != '(' { function_name_buffer.push(jt); }
+                        else { break; }
+                    }
+                }
+
+
+            } 
+            function_names.push( function_name_buffer.iter().collect::<String>());
+            function_scrs.push( String::new());
+        }
+        if eat_source {
+            //TODO
+            //The following is not robust should count curly braces or something and make sure things are good.
+            let cursor = function_scrs.len()-1;
+            function_scrs[cursor] += it;
+            function_scrs[cursor] += "\n";
+            if "}" == it || "} " == it {
+               eat_source = false; 
+            }
+        }
+        if it == "#[no_mangle]" { 
+            primed_ud_fn_name = true;
+            eat_source = true;
+        }
+    } 
+
+    for (i, it) in function_names.iter().enumerate(){
+        match instructionbuffer.get_index(it){ //TODO I need to get the index of the function from the instructionbuffer
+            Ok(index)=>{
+                drop(instructionbuffer.fns[index]);
+              
+
+                let mut game_logic : UserFn = unsafe{ std::mem::transmute(get_fn(app, it).unwrap().as_mut()) };
+                instructionbuffer.fns[index] = game_logic;
+
+                if instructionbuffer.fns_source[index] != function_scrs[i]{//check if source has changed
+                    instructionbuffer.fns_source[index]= function_scrs[i].clone();
+                    instructionbuffer.initialized[index] = false;
+                } else {
+                    instructionbuffer.initialized[index] = true;//TODO check this
+                }
+                continue; 
+            },
+            _=>{
+                let (target_w, target_h) = display.get_framebuffer_dimensions();
+                let texture = glium::texture::Texture2d::empty(display, (target_w as f32 * DEFAULT_TEXTURE_WIDTH_FRAC) as _,
+                                                                        (target_h as f32 * DEFAULT_TEXTURE_HEIGHT_FRAC) as _ ).expect("texture could not be created.");
+
+                let mut game_logic : UserFn = unsafe{ std::mem::transmute(get_fn(app, it).unwrap().as_mut()) };
+
+                instructionbuffer.push(BitmapContainer{initialized: false, bmp: None}, //::new(USER_BMP_DEFAULT_WIDTH, USER_BMP_DEFAULT_HEIGHT, RGBA::u8RGBA),
+                                      texture,
+                                      it.to_string(),
+                                      function_scrs[i].to_string(),
+                                      game_logic); //TODO  we need provious loads source info so we can
+                                      //diff to determine what's changed.
+            }
+        }
+    }
+    println!("Instruction buffer length {}", instructionbuffer.len());
+    println!("Source {}", instructionbuffer.fns_source.len());
+    println!("Source {:?}", instructionbuffer.ids);
+
+}
 
 
 

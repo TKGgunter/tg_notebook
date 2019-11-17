@@ -223,11 +223,13 @@ pub mod render_tools{
     #[derive(Default)]
     pub struct RenderStruct{
         pub rendertype : RenderType,
-        pub x: i32,//TODO FUTURE should these be options  .... the x and y could be decided internally
-        pub y: i32,//TODO FUTURE should these be options  .... the x and y could be decided internally
-        pub width:  i32,
-        pub height: i32,
+        pub x: f32,//TODO FUTURE should these be options  .... the x and y could be decided internally
+        pub y: f32,//TODO FUTURE should these be options  .... the x and y could be decided internally
+        pub width:  f32,
+        pub height: f32,
         pub alpha : f32,
+
+        pub print_string: bool,
          
         //rect related things
         pub filled: bool,
@@ -236,20 +238,18 @@ pub mod render_tools{
         //image related things
         pub color_buffer: Vec<u8>,
         pub rgba_type: RGBA,
-        pub new_width:  Option<i32>,// NOTE Testing out using a factional new width 
-        pub new_height: Option<i32>,// NOTE Testing out using a factional new height
+        pub new_width:  Option<f32>,// NOTE Testing out using a factional new width 
+        pub new_height: Option<f32>,// NOTE Testing out using a factional new height
 
         //Stings
         pub char_buffer: String,
-        pub font_size: f32
+        pub font_size: u32
     }
 
 
     #[derive(Default)]
     pub struct RenderInstructions{
         pub buffer: Vec<RenderStruct>,
-        pub internal_x: i32,
-        pub internal_y: i32,
     }
     //TODO 
     //This is a BAD name.... do better
@@ -263,17 +263,15 @@ pub mod render_tools{
     }
     impl RenderInstructions{
         pub fn clear(&mut self){
-            self.internal_x = 0;
-            self.internal_y = 0;
             self.buffer.clear();
         }
-        pub fn draw_rect(&mut self, rect: [i32; 4], color: [f32; 4], filled: bool){
+        pub fn draw_rect(&mut self, rect: [f32; 4], color: [f32; 4], filled: bool){
             let _color = [color[0], color[1], color[2]];
             self.buffer.push( RenderStruct{rendertype: RenderType::Rectangle, 
                                     x: rect[0], y:rect[1], width: rect[2], height: rect[3], 
                                     alpha: color[3], filled: filled, color: _color, .. Default::default()});
         }
-        pub fn draw_string(&mut self, s: &str, color: [f32; 4], size: f32 ){
+        pub fn draw_string(&mut self, s: &str, color: [f32; 4], size: u32, x: f32, y: f32 ){
             //TODO
             //should size be optional 
             //shouldn't a good text size be choosen automatically
@@ -281,17 +279,21 @@ pub mod render_tools{
             //should color be optional 
             //shouldn't a good text color be choosen automatically
             let _color = [color[0], color[1], color[2]];
-            self.buffer.push( RenderStruct{ rendertype: RenderType::String, x: self.internal_x, y: self.internal_y, 
+            self.buffer.push( RenderStruct{ rendertype: RenderType::String, x: x, y: y, 
                                             alpha: color[3], color: _color, char_buffer: s.to_string(), font_size: size, .. Default::default()} ); 
-            self.internal_y += 1;//TODO this is temp. FUTURE will need to use font size to determine how move the internal y
         }
 
-        pub fn draw_bmp(&mut self, bmp: &Bitmap, x: i32, y: i32, alpha: f32, w: Option<i32>, h: Option<i32>){
+        pub fn draw_bmp(&mut self, bmp: &Bitmap, x: f32, y: f32, alpha: f32, w: Option<f32>, h: Option<f32>){
             //TODO
             //should x and y be options, Often I want to just draw the image where ever and have it
             //automagicly look good with corresponding text
-            self.buffer.push( RenderStruct{rendertype: RenderType::Image, alpha: alpha, x: x, y: y, width: bmp.width, height: bmp.height,
+            self.buffer.push( RenderStruct{rendertype: RenderType::Image, alpha: alpha, x: x, y: y, width: bmp.width as f32, height: bmp.height as f32,
                                            new_width: w, new_height: h, rgba_type: bmp.rgba_type, color_buffer: bmp.buffer.clone(), .. Default::default()} ); 
+        }
+        pub fn println(&mut self, string: &str){
+            let buffer = "> ".to_string() + string;
+            self.buffer.push( RenderStruct{ rendertype: RenderType::String, print_string: true,
+                                            alpha: 1.0, color: [1.0, 1.0, 1.0], char_buffer: buffer, font_size: 19, .. Default::default()} ); 
         }
     }
 
@@ -328,7 +330,13 @@ pub mod render_tools{
     }
 
 
+    pub struct BitmapContainer{
+        pub initialized : bool,
+        pub bmp: Option<Bitmap>,
+    }
 }
+
+
 
 
 
@@ -702,7 +710,6 @@ pub mod interaction_tools{
     #[derive(Default)]
     pub struct InteractiveInfo{
         pub infocus: bool,
-        pub interactive: bool,
 
         pub mouse_x: f32,
         pub mouse_y: f32,
