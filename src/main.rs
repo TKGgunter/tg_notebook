@@ -16,7 +16,7 @@ use lib::dynamic_lib_loading;
 use lib::dynamic_lib_loading::{open_lib, get_fn, get_error, close_lib, DyLib};
 use lib::memory_tools::{GlobalStorage, LocalStorage};
 use lib::interaction_tools::{InteractiveInfo};
-use lib::render_tools::{Bitmap, RenderInstructions, BitmapContainer};
+use lib::render_tools::{Bitmap, RenderInstructions, BitmapContainer, RenderType};
 
 mod instructions;
 use instructions::InstructionBuffer;
@@ -608,7 +608,7 @@ fn main(){
     let mut last_modified = std::fs::metadata(&dll_path).unwrap().modified().unwrap();
     let mut last_dll_size = std::fs::metadata(&dll_path).unwrap().len();
     let mut debug_infostate = InfoState::new();
-    debug_infostate.most_recent_load_stamp = format!("{}", std::time::Instant::now());
+    debug_infostate.most_recent_load_stamp = format!("{:?}", std::time::Instant::now());
 
     'gameloop: loop{
 
@@ -747,7 +747,7 @@ fn main(){
                                    }; 
 
            render_panel( &mut instructionbuffer, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
-           render_ui( &mut debug_infostate, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
+           render_ui( &mut debug_infostate, &instructionbuffer, &mut renderer, &mouseinfo, &fontlib, &mut charmap);
         }
 
         target.finish().unwrap();
@@ -793,6 +793,23 @@ fn logic_panel( state: &mut InfoState, instructionbuffer: &mut InstructionBuffer
                 if i !=j { instructionbuffer.infocus[j] = false; }
             }
         }
+        if instructionbuffer.infocus[i] {
+
+            /////////////////////////
+            // TODO not good
+            if instructionbuffer.max_println_y[i] > 1.0{
+                instructionbuffer.println_y[i] += (mouseinfo.wheel_delta as f32) * 1.0/10.0;
+                    println!("ASDF {}", instructionbuffer.println_y[i]);
+                if instructionbuffer.println_y[i] < -0.11 {
+                    instructionbuffer.println_y[i] = 0.0;
+                }
+                else if 1.11 - instructionbuffer.println_y[i] < 0.0  {
+                    instructionbuffer.println_y[i] = 1.0;
+                }
+            }
+            /////////////////////////
+
+        }
     }
 }
 
@@ -803,14 +820,13 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
     let header_height = 0.05;
     let top = 0.945;
 
-    //EXAMPLE header rect and body rect
-    //gl_drawrect(renderer, -0.7, 0.945-header_height,     2.0 - 0.3, header_height, [0.07, 0.07, 0.07, 1.0], None);
-    //gl_drawrect(renderer, -0.7, 0.945-height-header_height, 2.0 - 0.3, height, C_LIGHTBLACK, None);
-    //
 
 
     for (i, it) in instructionbuffer.textures.iter_mut().enumerate(){
         let _i = (i + 1) as f32;
+        let mut max_println_y = 0.0;
+
+
         gl_drawrect(renderer, -0.7, top - _i * header_height - (_i - 1.0) * height, DEFAULT_TEXTURE_WIDTH_FRAC, header_height, [0.07, 0.07, 0.07, 1.0], None);
         draw_string(renderer, fontlib, charmap, &instructionbuffer.ids[i], None, 16, -0.68, top - _i * header_height - (_i - 1.0) * height - 0.01, [1.0; 4], None);
         {
@@ -819,22 +835,59 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
             let mut _renderer = Renderer{ display: renderer.display, target: &mut surface, indices: renderer.indices, program: renderer.program};
 
 
-            //TODO
-            //draw things to the texture.
+            for renderable in instructionbuffer.render_instructions[i].buffer.iter(){
+                let rendertype = renderable.rendertype.clone();
+                
+                match rendertype {
+                    RenderType::Image => {
+                        //TODO
+                    },
+                    RenderType::Rectangle => {//TODO outline vs filled
+                        let color = [renderable.color[0], renderable.color[1],renderable.color[2], renderable.alpha*0.8];
+                        gl_drawrect( &mut _renderer, renderable.x, renderable.y, renderable.width * DEFAULT_TEXTURE_HEIGHT_FRAC/DEFAULT_TEXTURE_WIDTH_FRAC , renderable.height, color, None);
+                    },
+                    RenderType::String => { 
+                        //TODO
+                        //Debug
+                        let color = [renderable.color[0], renderable.color[1],renderable.color[2], renderable.alpha*0.8];
+                        draw_string( &mut _renderer, fontlib, charmap, &renderable.char_buffer,
+                                     None, renderable.font_size, renderable.x, renderable.y , color, None);
+                        
+                    },
+                    RenderType::PrintString => {},
+                    RenderType::Empty => {},
+                }
+            }
+            //Draw print statements to texture
             let x = -0.99;
-            let mut y = 0.85;
+            let mut y = 0.85; 
             for renderable in instructionbuffer.render_instructions[i].buffer.iter(){
 
-                if renderable.print_string{
+                let mut delta_println_y = 0.0;//TODO this is bad remove me
+                if instructionbuffer.max_println_y[i] > 2.0 {
+                    delta_println_y = 1.0 + instructionbuffer.println_y[i] - instructionbuffer.max_println_y[i];
+                }
+                if renderable.rendertype == RenderType::PrintString{
                     let color = [renderable.color[0], renderable.color[1], renderable.color[2], renderable.alpha];
-                    let delta = draw_string( &mut _renderer, fontlib, charmap, &renderable.char_buffer, None, renderable.font_size, x, y, color, Some(1.85));
+                    let delta = draw_string( &mut _renderer, fontlib, charmap, &renderable.char_buffer,
+                                             None, renderable.font_size, x, y - delta_println_y , color, Some(1.85));
                     y -= delta;
                 }
 
             }
+            max_println_y = y-0.15;
+
+            instructionbuffer.max_println_y[i] = max_println_y.abs();
+            if max_println_y.abs() > 1.0{//draw scroll bar
+
+                gl_drawrect(&mut _renderer, 0.97, -1.0, 0.1, 2.0, C_GREY, None);
+                gl_drawrect(&mut _renderer, 0.97, -1.0+instructionbuffer.println_y[i], 0.1, 2.0/(max_println_y.abs()), C_GREEN, None);
+            }
+
         }
 
         let pos_y = top - _i * header_height - _i * height;
+
         gl_drawtexture(renderer, it, -0.7, pos_y, 1.0, 1.0, None, None, None);
         instructionbuffer.pos_rect[i][0] = -0.7;
         instructionbuffer.pos_rect[i][1] = pos_y;
@@ -844,26 +897,6 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
 
 
 
-    gl_drawrect(renderer, -0.7, top-2.0*header_height-height-0.01,  2.0 - 0.3, header_height, [0.07, 0.07, 0.07, 1.0], None);//Panel Header
-    draw_string(renderer, fontlib, charmap, "ASDFsadfasdfasdf;kl", None, 16, -0.68,  top-2.0*header_height-height-0.02, C_WHITE, None);
-    {
-        let (target_w, target_h) = renderer.target.get_dimensions();
-        
-        let texture = glium::texture::Texture2d::empty(renderer.display, (target_w as f32 * DEFAULT_TEXTURE_WIDTH_FRAC) as _, (target_h as f32 * height) as _ ).expect("texture could not be created.");
-        {
-            let mut surface = texture.as_surface();
-            surface.clear_color(C_LIGHTBLACK[0], C_LIGHTBLACK[1], C_LIGHTBLACK[2], C_LIGHTBLACK[3]);
-
-
-            //TODO
-            //if infocus and there are other things to render that is outside of view.
-            let mut _renderer = Renderer{ display: renderer.display, target: &mut surface, indices: renderer.indices, program: renderer.program};
-            draw_string(&mut _renderer, fontlib, charmap, "ASDFsadfasdfasdf;kl", None, 19, -0.9, 0.80, C_WHITE, Some(1.85));
-            gl_drawrect(&mut _renderer, 0.97, -1.0, 0.1, 2.0, C_GREY, None);
-            gl_drawrect(&mut _renderer, 0.97, -0.99, 0.1, 1.98, C_GREEN, None);
-        }
-        gl_drawtexture(renderer, &texture, -0.7, top-2.0*header_height-2.0*height-0.01, 1.0, 1.0 , None, None, None);
-    }
 }
 
 struct InfoState{
@@ -884,17 +917,23 @@ impl InfoState{
     }
 }
 
-fn render_ui<T: glium::Surface>( state: &InfoState, renderer: &mut Renderer<T>, mouseinfo: &MouseInfo, fontlib: &FontLib, charmap: &mut CharMap ){
-    gl_drawrect(renderer, -1.0, 0.94, 2.0, 0.06, C_GREY, None); // header rect
+fn render_ui<T: glium::Surface>( state: &mut InfoState, instructionbuffer: &InstructionBuffer, renderer: &mut Renderer<T>, mouseinfo: &MouseInfo, fontlib: &FontLib, charmap: &mut CharMap ){
+
     gl_drawrect(renderer, -0.7, -1.0, 0.01, 2.0, C_GREY, None); // Line that divides the list of functions and the function outputs
+    for (i, id) in instructionbuffer.ids.iter().enumerate(){
+        draw_string(renderer, fontlib, charmap, id , None, 16, -0.98, 0.88-i as f32*0.05, C_WHITE, None);
+    }
     
 
+    let full_length = instructionbuffer.len() as f32 * DEFAULT_TEXTURE_HEIGHT_FRAC;
+    state.scrollthumb_rect[3] = 1.92/full_length;
     gl_drawrect(renderer, 0.98, -0.94, 0.1, 1.92, C_GREY, None);     //scroll bar
     {
         let [x, y, w, h] = state.scrollthumb_rect;
         gl_drawrect(renderer, x, y, w, h, C_PURPLE, None);  //scroll thumb 
     }
 
+    gl_drawrect(renderer, -1.0, 0.94, 2.0, 0.06, C_GREY, None); // header rect
     if state.activated_function.len() == 0 { //Denote activated function
         draw_string(renderer, fontlib, charmap, "----- ", None, 16, -0.01, 0.94, C_WHITE, None);
     } else {
@@ -917,44 +956,7 @@ fn render_ui<T: glium::Surface>( state: &InfoState, renderer: &mut Renderer<T>, 
 }
 
 
-fn TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
-    let texture = glium::texture::Texture2d::empty(renderer.display, 100, 100).expect("we could not make the texture");
-    {
 
-        let mut surface = texture.as_surface();
-        surface.clear_color( 1.0, 0.0, 0.0, 1.0);
-    }
-    gl_drawtexture(&mut renderer, &texture, -0.2, -0.2, 1.0, 1.0, None, None, None);
-    
-    return None;    
-}
-
-fn _2TEMP_FN<T: glium::Surface>( state: &mut TEMP_STATE, mut renderer: Renderer<T>, mouseinfo: &MouseInfo, texture: Option<&mut glium::texture::Texture2d> )->Option<glium::texture::Texture2d>{
-    //Info
-    //Scrolling example.
-
-    if state.init == false{
-        state.init = true;
-        state.box_in_focus = false;
-        state.w    = 1000.0;
-        state.h    = 1000.0;
-
-
-        state.rect1 = [0.0, 0.0, 0.4, 0.2];
-    }
-
-    let rect1 = Bmp{ w: 30,
-                     h: 30,
-                     buffer: vec![0x11; 4*30*30],
-                   };
-
-    state.rect1[1] += (mouseinfo.wheel_delta as f32) * 1.0/10.0;
-    
-    let [x, y, w, h] = state.rect1;
-    gl_drawbmp( &mut renderer, &rect1, x, y, w, h, None );
-
-    return None;
-}
 
 pub fn convert_screen_coor_to_pixel_corr(rect: [f32;4])-> [i32; 4]{
     let WindowInfo{focused, width, height} = clone_windowinfo();
@@ -1034,7 +1036,6 @@ fn gl_drawbmp<T: glium::Surface>( renderer: &mut Renderer<T>, bmp: &Bmp, x: f32,
 fn gl_drawrect<T: glium::Surface>(renderer: &mut Renderer<T>, x: f32, y: f32, sw: f32, sh: f32, color: [f32; 4], perspective: Option<[[f32;4];4]>){
 
     let mut texture = glium::texture::Texture2d::empty(renderer.display, 100, 100).expect("rect texture was not able to be generated");
-    //let mut texture = glium::texture::Texture2d::empty(renderer.display, (100.0) as _, (100.0*sh) as _).expect("rect texture was not able to be generated");
     {
         let [r, g, b, a] = color;
         let mut surface = texture.as_surface();

@@ -210,10 +210,12 @@ use std::os::raw::{c_char, c_int, c_void};
 
 pub mod render_tools{
 
+    #[derive(PartialEq, Clone,  Debug)]
     pub enum RenderType{
         Image,
         Rectangle,
         String,
+        PrintString,
         Empty,
     }
     impl Default for RenderType{
@@ -229,7 +231,6 @@ pub mod render_tools{
         pub height: f32,
         pub alpha : f32,
 
-        pub print_string: bool,
          
         //rect related things
         pub filled: bool,
@@ -292,7 +293,7 @@ pub mod render_tools{
         }
         pub fn println(&mut self, string: &str){
             let buffer = "> ".to_string() + string;
-            self.buffer.push( RenderStruct{ rendertype: RenderType::String, print_string: true,
+            self.buffer.push( RenderStruct{ rendertype: RenderType::PrintString, 
                                             alpha: 1.0, color: [1.0, 1.0, 1.0], char_buffer: buffer, font_size: 19, .. Default::default()} ); 
         }
     }
@@ -709,6 +710,7 @@ pub mod interaction_tools{
 
     #[derive(Default)]
     pub struct InteractiveInfo{
+        //TODO add some frame info
         pub infocus: bool,
 
         pub mouse_x: f32,

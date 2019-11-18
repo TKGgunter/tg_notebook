@@ -23,7 +23,14 @@ fn UD_test(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage
     ri.println("Ready for blast off?");
     ri.println("All systems check!");
     ri.println("Blastoff!!!!");
+    return Ok(());
+}
+
+#[no_mangle]
+fn UD_test2(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
     ri.println("Blastoff!!!!");
+    ri.draw_string("Hello Sailor!", [-0.1, 0.1, 0.5, 0.5], 16, 0.0, -1.0 );
+    ri.draw_rect([-0.1, 0.1, 0.5, 0.5], [1.0; 4], true);
     return Ok(());
 }
 

@@ -20,6 +20,8 @@ pub struct InstructionBuffer{
     pub fns          : Vec<UserFn>,
     pub fns_source   : Vec<String>,
     pub pos_rect     : Vec<[f32; 4]>,
+    pub println_y    : Vec<f32>,
+    pub max_println_y    : Vec<f32>,
 
     pub render_instructions: Vec<RenderInstructions>,
     pub localstorage       : Vec<LocalStorage>,
@@ -41,6 +43,8 @@ impl InstructionBuffer{
                             fns          : Vec::new(), 
                             fns_source   : Vec::new(), 
                             pos_rect     : Vec::new(), 
+                            println_y    : Vec::new(),
+                            max_println_y    : Vec::new(),
                             render_instructions: Vec::new(),
                             localstorage       : Vec::new(),
                             ids                : Vec::new(),
@@ -61,6 +65,8 @@ impl InstructionBuffer{
 
         let l = self.bitmaps.len();
         self.pos_rect.push([0.0;4]);
+        self.println_y.push(-0.0);
+        self.max_println_y.push(-0.0);
 
         self.render_instructions.push( Default::default() );
         self.localstorage.push(LocalStorage::new());
