@@ -13,10 +13,10 @@ use std::ptr::{null_mut};
 
 mod lib;
 use lib::dynamic_lib_loading;
-use lib::dynamic_lib_loading::{open_lib, get_fn, get_error, close_lib, DyLib};
+use lib::dynamic_lib_loading::{open_lib, get_fn, close_lib, DyLib};
 use lib::memory_tools::{GlobalStorage, LocalStorage};
 use lib::interaction_tools::{InteractiveInfo};
-use lib::render_tools::{Bitmap, RenderInstructions, BitmapContainer, RenderType};
+use lib::render_tools::{RenderInstructions, RenderType};
 
 mod instructions;
 use instructions::InstructionBuffer;
@@ -52,7 +52,7 @@ const DEFAULT_TEXTURE_WIDTH_FRAC  : f32 = 1.7;
 const DEFAULT_TEXTURE_HEIGHT_FRAC : f32 = 0.45;
 
 
-type UserFn = fn(&mut BitmapContainer, &mut RenderInstructions, &mut GlobalStorage, &mut LocalStorage, &InteractiveInfo)->Result<(), String>;
+type UserFn = fn(&mut RenderInstructions, &mut GlobalStorage, &mut LocalStorage, &InteractiveInfo)->Result<(), String>;
 
 
 
@@ -266,7 +266,7 @@ pub fn get_advance(character: char, size: f32)->f32{unsafe{
     let mut adv = 0;
     let scale = stbtt_ScaleForPixelHeight(&GLOBAL_FONTINFO as *const stbtt_fontinfo, size);
     stbtt_GetCodepointHMetrics(&GLOBAL_FONTINFO as *const stbtt_fontinfo, character as i32, &mut adv as *mut i32, null_mut());
-    return (adv as f32 * scale);
+    return adv as f32 * scale;
 }}
 
 fn draw_char<T: glium::Surface>( renderer: &mut Renderer<T>, fontlib: &FontLib, charmap: &mut CharMap, character: char, font: Option<String>, size: u32, x: f32, y: f32, color: [f32; 4])->f32{
@@ -442,7 +442,6 @@ fn main(){
     }
 
 
-    let dll_source_path_len = dll_source_path.len();
     let mut dll_path = "".to_string();
 
     if args.len() != 3{
@@ -479,7 +478,7 @@ fn main(){
         copy_dll_path = "temp.so".to_string();
     }
 
-    std::fs::copy(&dll_path, &copy_dll_path);
+    std::fs::copy(&dll_path, &copy_dll_path).expect("Could not copy dll");
     let mut app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
 
 
@@ -569,16 +568,6 @@ fn main(){
 
     set_windoinfo(windowinfo);
     let mut mouseinfo = MouseInfo::new();
-    let mut temp_state = TEMP_STATE{  init: false,
-                                      box_in_focus: false, 
-                                      x: 0.0, 
-                                      y: 0.0,
-                                      w: 0.0, 
-                                      h: 0.0,
-
-                                      prev_mouse: [0, 0],
-                                      .. Default::default()
-                                      };
 
 
 
@@ -654,7 +643,6 @@ fn main(){
 
 
 
-        let mut window_info = clone_windowinfo();
 
         mouseinfo.wheel_delta = 0;
         event_loop.poll_events(|event| {
@@ -726,11 +714,10 @@ fn main(){
         
         for i in 0..instructionbuffer.ids.len(){//Run new dll functions
             if instructionbuffer.initialized[i] == false || instructionbuffer.interactive[i]{ 
-                instructionbuffer.fns[i]( &mut instructionbuffer.bitmaps[i], 
-                                          &mut instructionbuffer.render_instructions[i], 
+                instructionbuffer.fns[i]( &mut instructionbuffer.render_instructions[i], 
                                           &mut globalstorage, 
                                           &mut instructionbuffer.localstorage[i], 
-                                          & interactive_info);
+                                          & interactive_info); //TODO handle errors
                 instructionbuffer.initialized[i] = true;
             }
         }
@@ -757,18 +744,6 @@ fn main(){
 
 }
 
-#[derive(Default)]
-struct TEMP_STATE{
-    init: bool,
-    box_in_focus: bool,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32, 
-
-    prev_mouse: [i32; 2],
-    rect1: [f32; 4],
-}
 
 
 
@@ -824,7 +799,7 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
 
     for (i, it) in instructionbuffer.textures.iter_mut().enumerate(){
         let _i = (i + 1) as f32;
-        let mut max_println_y = 0.0;
+        let mut max_println_y;
 
 
         gl_drawrect(renderer, -0.7, top - _i * header_height - (_i - 1.0) * height, DEFAULT_TEXTURE_WIDTH_FRAC, header_height, [0.07, 0.07, 0.07, 1.0], None);
@@ -1035,7 +1010,7 @@ fn gl_drawbmp<T: glium::Surface>( renderer: &mut Renderer<T>, bmp: &Bmp, x: f32,
 
 fn gl_drawrect<T: glium::Surface>(renderer: &mut Renderer<T>, x: f32, y: f32, sw: f32, sh: f32, color: [f32; 4], perspective: Option<[[f32;4];4]>){
 
-    let mut texture = glium::texture::Texture2d::empty(renderer.display, 100, 100).expect("rect texture was not able to be generated");
+    let texture = glium::texture::Texture2d::empty(renderer.display, 100, 100).expect("rect texture was not able to be generated");
     {
         let [r, g, b, a] = color;
         let mut surface = texture.as_surface();
@@ -1151,7 +1126,7 @@ fn get_function_from_source( dll_source_path: &str, app: &DyLib, instructionbuff
     use std::io::prelude::*;
     let mut f = std::fs::File::open(dll_source_path).expect("Source file does not exist.");
     let mut str_file = String::new();
-    f.read_to_string(&mut str_file);
+    f.read_to_string(&mut str_file).expect("could not read file to string.");
     let mut primed_ud_fn_name = false;
     let mut eat_source = false;
     let mut function_names = vec![];
@@ -1237,8 +1212,7 @@ fn get_function_from_source( dll_source_path: &str, app: &DyLib, instructionbuff
 
                 let mut game_logic : UserFn = unsafe{ std::mem::transmute(get_fn(app, it).unwrap().as_mut()) };
 
-                instructionbuffer.push(BitmapContainer{initialized: false, bmp: None}, //::new(USER_BMP_DEFAULT_WIDTH, USER_BMP_DEFAULT_HEIGHT, RGBA::u8RGBA),
-                                      texture,
+                instructionbuffer.push(texture,
                                       it.to_string(),
                                       function_scrs[i].to_string(),
                                       game_logic); //TODO  we need provious loads source info so we can

@@ -3,11 +3,8 @@
 //Organizationally this is probably bad for cache
 extern crate glium;
 
-use lib::dynamic_lib_loading;
-use lib::dynamic_lib_loading::{open_lib, get_fn, get_error, close_lib, DyLib};
-use lib::memory_tools::{GlobalStorage, LocalStorage};
-use lib::interaction_tools::{InteractiveInfo};
-use lib::render_tools::{RenderInstructions, BitmapContainer};
+use lib::memory_tools::{LocalStorage};
+use lib::render_tools::{RenderInstructions, };
 
 use glium::texture::Texture2d;
 use UserFn;
@@ -15,7 +12,6 @@ use UserFn;
 pub struct InstructionBuffer{
     pub initialized  : Vec<bool>,
 
-    pub bitmaps      : Vec<BitmapContainer>,
     pub textures     : Vec<Texture2d>,
     pub fns          : Vec<UserFn>,
     pub fns_source   : Vec<String>,
@@ -38,7 +34,6 @@ pub struct InstructionBuffer{
 impl InstructionBuffer{
     pub fn new()->InstructionBuffer{
         InstructionBuffer{  initialized  : Vec::new(),
-                            bitmaps      : Vec::new(), 
                             textures     : Vec::new(), 
                             fns          : Vec::new(), 
                             fns_source   : Vec::new(), 
@@ -54,16 +49,15 @@ impl InstructionBuffer{
                             src_path: String::new(),
         }
     }
-    pub fn push( &mut self, bmp: BitmapContainer, texture: Texture2d, id: String, source: String,
+    pub fn push( &mut self, texture: Texture2d, id: String, source: String,
              func: UserFn ){
         self.initialized.push(false); 
 
-        self.bitmaps.push(bmp); 
         self.textures.push(texture); 
         self.fns.push(func); 
         self.fns_source.push(source); 
 
-        let l = self.bitmaps.len();
+        let l = self.textures.len();
         self.pos_rect.push([0.0;4]);
         self.println_y.push(-0.0);
         self.max_println_y.push(-0.0);
@@ -78,16 +72,16 @@ impl InstructionBuffer{
         //CLEANUP
         // this is kinda stupid
         // there might be a more elagante way of doing this.
-        if  self.bitmaps.len() != self.ids.len() {panic!("InstructionBuffer bitmaps {} and ids {} do not agree", self.bitmaps.len(), self.ids.len());} 
-        if  self.bitmaps.len() != self.fns.len(){panic!("InstructionBuffer bitmaps and fns do not agree");} 
-        if  self.bitmaps.len() != self.render_instructions.len(){panic!(format!("InstructionBuffer bitmaps {} and renderinstructions do not agree {}", self.bitmaps.len(), self.render_instructions.len()));} 
-        if  self.localstorage.len() != self.bitmaps.len(){panic!("InstructionBuffer bitmaps and localstorage do not agree");} 
+        if  self.textures.len() != self.ids.len() {panic!("InstructionBuffer textures {} and ids {} do not agree", l, self.ids.len());} 
+        if  self.textures.len() != self.fns.len(){panic!("InstructionBuffer textures and fns do not agree");} 
+        if  self.textures.len() != self.render_instructions.len(){panic!(format!("InstructionBuffer textures {} and renderinstructions do not agree {}", l, self.render_instructions.len()));} 
+        if  self.localstorage.len() != l{panic!("InstructionBuffer textures and localstorage do not agree");} 
         if  self.localstorage.len() != self.fns_source.len(){panic!("InstructionBuffer fns_source and localstorage do not agree");} 
         if  self.localstorage.len() != self.interactive.len() 
            { panic!("InstructionBuffer lengths localstorage and interactiveinputs are different."); }
     }
     pub fn len(&self)->usize{
-        return self.bitmaps.len();
+        return self.textures.len();
     }
     pub fn contains(&self, id: &str)->bool{
         for it in self.ids.iter(){

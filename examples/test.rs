@@ -18,7 +18,7 @@ use interaction_tools::*;
 
 
 #[no_mangle]
-fn UD_test(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
+fn UD_test(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
     ri.println("Testing Testing 1,2,3");
     ri.println("Ready for blast off?");
     ri.println("All systems check!");
@@ -27,10 +27,13 @@ fn UD_test(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage
 }
 
 #[no_mangle]
-fn UD_test2(bmp: &mut Bitmap, ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
-    ri.println("Blastoff!!!!");
-    ri.draw_string("Hello Sailor!", [-0.1, 0.1, 0.5, 0.5], 16, 0.0, -1.0 );
-    ri.draw_rect([-0.1, 0.1, 0.5, 0.5], [1.0; 4], true);
+fn UD_main(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
+    ri.println("Hello World!");
+        //pub fn store<T: 'static>(&mut self, v: T, name: &str)->Result<(), String>{
+    gs.store([1.0f32;4], "some_color");
+    gs.get::<[f32;4]>("some_color")?;
+    
     return Ok(());
 }
+
 

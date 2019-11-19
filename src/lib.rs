@@ -7,7 +7,7 @@ pub mod dynamic_lib_loading{
 
 use std::ffi::CString; 
 use std::ptr;
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_int, c_void};
 
 //
 //This is a lib of dlopen and dlclose using rust
@@ -155,7 +155,7 @@ use std::os::raw::{c_char, c_int, c_void};
 
 #[cfg(target_os = "windows")]
 pub mod dynamic_lib_loading{
-use std::os::raw::{c_char, c_int, c_void};
+use std::os::raw::{c_int, c_void};
 
     extern "C" {
         fn LoadLibraryA( path: *const i8 ) -> *mut c_void;
@@ -170,7 +170,7 @@ use std::os::raw::{c_char, c_int, c_void};
 
     pub struct DyLib(*mut c_void);
 
-    pub fn open_lib( lib_path: &str, flag: i32 )->Result<DyLib, String>{unsafe{
+    pub fn open_lib( lib_path: &str, _flag: i32 )->Result<DyLib, String>{unsafe{
         let _path = lib_path.to_string() + "\0";
         let lib = LoadLibraryA( _path.as_ptr() as *const i8);
         if lib.is_null(){
@@ -455,7 +455,7 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
     }
     impl<S: Storage> Ptr<S>{
         pub fn deref_mut<T: 'static>(&self)->&mut T{unsafe{
-            if self.type_hash != TypeId::of::<T>() { panic!("Could not dereference custom pointer do to failed hash comparison.");}
+            if self.type_hash != TypeId::of::<T>() { panic!("Could not dereference custom pointer do to failed type hash comparison.");}
             let gs = self.backend_storage.as_mut().unwrap();
 
             ((&mut gs.get_storage()[self.ptr] as *mut u8 ) as *mut T).as_mut().unwrap()
@@ -493,7 +493,7 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
             }
             {
                 let cursor = self.ptr.ptr + self.length * std::mem::size_of::<T>();
-                gs.write_to(v, cursor);
+                gs.write_to(v, cursor).expect("Global storage could not write to index.");
 
                 self.length +=1;
             }
@@ -580,7 +580,7 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
             let size = std::mem::size_of::<T>() * multiples;
 
             let cursor = self.storage.len();
-            for i in 0..size{
+            for _i in 0..size{
                //TODO
                //SLOW SPEED ME UP
                //I don't think I want to be pushing every thiem like this
@@ -604,7 +604,7 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
                 self.storage.push(temp);
                 self.storage_filled.push(true);
             }
-            for i in 0..additional_space{
+            for _i in 0..additional_space{
                 self.storage.push(0);
                 self.storage_filled.push(true);
             }
@@ -633,7 +633,7 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
         }
         pub fn store<T: 'static>(&mut self, v: T, name: &str)->Result<(), String>{
             if name.len() > _FIXED_CHAR_BUFFER_SIZE {
-                return Err("storage name is too damn long".to_string());
+                return Err(format!("storage name is too damn long. Name should be {} chars long.", _FIXED_CHAR_BUFFER_SIZE));
             }
 
             let cursor = self.stored_ptr.len();
@@ -649,7 +649,6 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
         }
 
         pub fn get<T: 'static>(&mut self, name: &str)->Result<&mut T, String>{
-            let cursor = self.stored_ptr.len();
             let mut isgood = false;
             let mut ptr_index = 0;
             for (i, it) in self.reference.iter().enumerate() {
