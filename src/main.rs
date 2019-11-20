@@ -26,9 +26,8 @@ use instructions::InstructionBuffer;
 //To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
 
 //TODO
-// + begin to move over repl stuffs
-//  -- dll                   DONE
-//  -- load an example       
+//  + fix alpha blending
+//  + 
 // + render size good for many screens 
 //   --  check the dpi then tailor scaler factor appropriately.
 // + clean up renderering
@@ -478,8 +477,13 @@ fn main(){
         copy_dll_path = "temp.so".to_string();
     }
 
+    let current_path = std::env::current_dir().unwrap();
+    let mut str_current_path = current_path.to_str().unwrap().to_string();
+    str_current_path += "/";
+    str_current_path += &copy_dll_path;
     std::fs::copy(&dll_path, &copy_dll_path).expect("Could not copy dll");
-    let mut app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
+    let mut app = open_lib(&str_current_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
+    //let mut app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
 
 
 
@@ -632,7 +636,8 @@ fn main(){
                 //the above is stupid
                 //////////////////////
 
-                app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
+                app = open_lib(&str_current_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
+                //app = open_lib(&copy_dll_path, dynamic_lib_loading::RTLD_LAZY).expect("Library could not be found.");
                 get_function_from_source( dll_source_path, &app, &mut instructionbuffer, &display);
                 last_modified = modified;
 
@@ -774,7 +779,6 @@ fn logic_panel( state: &mut InfoState, instructionbuffer: &mut InstructionBuffer
             // TODO not good
             if instructionbuffer.max_println_y[i] > 1.0{
                 instructionbuffer.println_y[i] += (mouseinfo.wheel_delta as f32) * 1.0/10.0;
-                    println!("ASDF {}", instructionbuffer.println_y[i]);
                 if instructionbuffer.println_y[i] < -0.11 {
                     instructionbuffer.println_y[i] = 0.0;
                 }
@@ -1220,9 +1224,6 @@ fn get_function_from_source( dll_source_path: &str, app: &DyLib, instructionbuff
             }
         }
     }
-    println!("Instruction buffer length {}", instructionbuffer.len());
-    println!("Source {}", instructionbuffer.fns_source.len());
-    println!("Source {:?}", instructionbuffer.ids);
 
 }
 

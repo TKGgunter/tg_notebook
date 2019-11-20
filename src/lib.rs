@@ -222,8 +222,8 @@ pub mod render_tools{
     #[derive(Default)]
     pub struct RenderStruct{
         pub rendertype : RenderType,
-        pub x: f32,//TODO FUTURE should these be options  .... the x and y could be decided internally
-        pub y: f32,//TODO FUTURE should these be options  .... the x and y could be decided internally
+        pub x: f32,
+        pub y: f32,
         pub width:  f32,
         pub height: f32,
         pub alpha : f32,
