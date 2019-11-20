@@ -4,7 +4,7 @@ pub mod dynamic_lib_loading{
 
 use std::ffi::CString; 
 use std::ptr;
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_int, c_char, c_void};
 
 //
 //This is a lib of dlopen and dlclose using rust
