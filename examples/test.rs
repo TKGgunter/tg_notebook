@@ -1,4 +1,5 @@
 #![crate_type = "dylib"]
+#![allow(unused_variables)]
 //TODO 
 //This is a c style include. It copyies the entire rust lib file into this compilation unit.
 //We should attempt to clean this up some time to make it more rust like. For the moment however
@@ -19,22 +20,30 @@ use interaction_tools::*;
 
 #[no_mangle]
 fn UD_test(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
-    ri.println("Testing Testing 1,2,3");
-    ri.println("Ready for blast off?");
-    ri.println("All systems check!");
-    ri.println("Blastoff!!!!");
-    ri.println("Basdfasdfaflastoff!!!!");
+    ri.println("Hello World");
+    ri.draw_rect([0.0, 0.0, 0.4, 0.4], [1.0;4], true);
     return Ok(());
+}
+
+
+#[no_mangle]
+fn UD_test1(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
+    gs.store([1.0f32; 5], "stuff");
+    gs.store(Abc{a: 10.0}, "stuff2");
+    ri.println("done!");
+    return Ok(());
+}
+
+#[derive(Debug)]
+struct Abc{
+    a : f32,
 }
 
 #[no_mangle]
-fn UD_main(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
-    ri.println("Hello World!");
-        //pub fn store<T: 'static>(&mut self, v: T, name: &str)->Result<(), String>{
-    gs.store([1.0f32;4], "some_color");
-    gs.get::<[f32;4]>("some_color")?;
-    
+fn UD_test2(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
+    let l : [f32; 5] = *gs.get("stuff")?;
+    ri.println(&format!("{:?}", l));
+    let abc : &Abc = gs.get("stuff2")?;
+    ri.println(&format!("{:?}", abc));
     return Ok(());
 }
-
-

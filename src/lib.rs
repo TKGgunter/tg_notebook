@@ -1,6 +1,9 @@
 
 #[cfg(target_os = "linux")]
 pub mod dynamic_lib_loading{
+#![allow(unused_imports)]
+#![allow(non_camel_case_types)]
+#![allow(dead_code)]
 
 use std::ffi::CString; 
 use std::ptr;

@@ -1072,9 +1072,7 @@ fn gl_drawtexture<T: glium::Surface>(renderer: &mut Renderer<T>, texture: &glium
         
         //TODO This is temp
         let vertexbuffer = generate_plane_ex([0.0, 0.0, ratio_w, ratio_h], subrect.unwrap_or([0.0, 0.0, 1.0, 1.0]), display);
-        //let vertexbuffer = generate_plane_ex([0.0, 0.0, ratio, 1.0], subrect.unwrap_or([0.0, 0.0, 1.0, 1.0]), display);
 
-        //let blend = glium::draw_parameters::Blend{color: glium::BlendingFunction::AlwaysReplace, alpha: glium::BlendingFunction::Min, constant_value: (0.0, 1.0, 0.0, 1.0)};
         let mut draw_params : glium::draw_parameters::DrawParameters =  Default::default();
         draw_params.blend = glium::Blend::alpha_blending();
 
