@@ -665,19 +665,21 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
 
     }
 
-    pub struct LocalStorage{
+    pub struct LocalSettingsStorage{
         //NOTE
         //This seems to be a good idea when it comes to interactive panels
         //However I'm not sure about the usefulness else where....
         //
         //
         //Why should the local buffer be fixed sized. This doesn't really make sense.
-        pub initialized: bool,
+        pub interactive: bool,
+        pub storage: GlobalStorage,
     }
-    impl LocalStorage{
-        pub fn new()->LocalStorage{
-            LocalStorage{
-                initialized: false,
+    impl LocalSettingsStorage{
+        pub fn new()->LocalSettingsStorage{
+            LocalSettingsStorage{
+                interactive: false,
+                storage: GlobalStorage::new(),
             }
         }
     }

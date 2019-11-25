@@ -2,10 +2,10 @@
 
 #[macro_use]
 extern crate glium;
-extern crate nalgebra;
+extern crate nalgebra; //TODO we can remove this dependancy if we want to we don't use it right now
 extern crate stb_tt_sys;
 
-use nalgebra::core::Matrix4;
+use nalgebra::core::Matrix4; //TODO this can be removed if we want
 use glium::{glutin, Surface};
 
 use stb_tt_sys::*;
@@ -14,7 +14,7 @@ use std::ptr::{null_mut};
 mod lib;
 use lib::dynamic_lib_loading;
 use lib::dynamic_lib_loading::{open_lib, get_fn, close_lib, DyLib};
-use lib::memory_tools::{GlobalStorage, LocalStorage};
+use lib::memory_tools::{GlobalStorage, LocalSettingsStorage};
 use lib::interaction_tools::{InteractiveInfo};
 use lib::render_tools::{RenderInstructions, RenderType};
 
@@ -26,12 +26,11 @@ use instructions::InstructionBuffer;
 //To generate a texture and push that texture to the gpu it takes another 2-3 millisecs
 
 //TODO
-//  + fix alpha blending
-//  + 
-// + render size good for many screens 
-//   --  check the dpi then tailor scaler factor appropriately.
-// + clean up renderering
-// + char map will run out if space and crash. we should handle this
+// + scroll for panels
+// + fix alpha blending
+// + interactivity
+// + char map will run out if space. we should handle this
+
 
 //BUGS
 // + When render symbols are on different lines in texture alignment get out of sync
@@ -51,7 +50,7 @@ const DEFAULT_TEXTURE_WIDTH_FRAC  : f32 = 1.7;
 const DEFAULT_TEXTURE_HEIGHT_FRAC : f32 = 0.45;
 
 
-type UserFn = fn(&mut RenderInstructions, &mut GlobalStorage, &mut LocalStorage, &InteractiveInfo)->Result<(), String>;
+type UserFn = fn(&mut RenderInstructions, &mut GlobalStorage, &mut LocalSettingsStorage, &InteractiveInfo)->Result<(), String>;
 
 
 
@@ -592,7 +591,7 @@ fn main(){
 
 
     let mut globalstorage = GlobalStorage::new();
-    let mut interactive_info = Default::default(); //TODO
+    let mut interactive_info :InteractiveInfo= Default::default(); //TODO
 
 
     let mut exit = false;
@@ -704,6 +703,9 @@ fn main(){
                             }
                         }
                     },
+                    glutin::WindowEvent::ReceivedCharacter(c) => {
+                        interactive_info.text_key_pressed = c; //TODO there is a difference between received character and key pressed
+                    },
                     _=>{}
                 },
                 _=>{}
@@ -719,11 +721,19 @@ fn main(){
         
         for i in 0..instructionbuffer.ids.len(){//Run new dll functions
             if instructionbuffer.initialized[i] == false || instructionbuffer.interactive[i]{ 
-                instructionbuffer.fns[i]( &mut instructionbuffer.render_instructions[i], 
-                                          &mut globalstorage, 
-                                          &mut instructionbuffer.localstorage[i], 
-                                          & interactive_info); //TODO handle errors
+                let op_error = instructionbuffer.fns[i]( &mut instructionbuffer.render_instructions[i], 
+                                                         &mut globalstorage, 
+                                                         &mut instructionbuffer.localstorage[i], 
+                                                         & interactive_info); //TODO handle errors
                 instructionbuffer.initialized[i] = true;
+                instructionbuffer.interactive[i] = instructionbuffer.localstorage[i].interactive;
+                match op_error {
+                    Ok(_) => {},
+                    Err(e) => {
+                        debug_infostate.errors.push(e.clone());
+                        instructionbuffer.errors[i] = e; 
+                    }
+                }
             }
         }
 
@@ -853,6 +863,11 @@ fn render_panel<T: glium::Surface>( instructionbuffer: &mut InstructionBuffer, r
                     y -= delta;
                 }
 
+            }
+            {//TODO
+             // render errors
+             //   draw_string( &mut _renderer, fontlib, charmap, &instructionbuffer.errors[i],
+             //               None, renderable.font_size, x, y - delta_println_y , C_RED, Some(1.85));
             }
             max_println_y = y-0.15;
 
@@ -1204,6 +1219,7 @@ fn get_function_from_source( dll_source_path: &str, app: &DyLib, instructionbuff
                     instructionbuffer.render_instructions[index].clear();
                 } else {
                     instructionbuffer.initialized[index] = true;//TODO check this
+                    instructionbuffer.interactive[i] == instructionbuffer.localstorage[i].interactive;
                 }
                 continue; 
             },
