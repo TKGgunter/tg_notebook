@@ -20,8 +20,10 @@ use interaction_tools::*;
 
 #[no_mangle]
 fn UD_test(ri: &mut RenderInstructions, gs: &mut GlobalStorage, ls: &mut LocalStorage, inputs: &InteractiveInfo)->Result<(), String>{
-    ri.println("Hello World");
-    ri.draw_rect([0.0, 0.0, 0.4, 0.4], [1.0;4], true);
+    ls.interactive = true;
+    //ri.println("Hello World");
+    ri.clear();
+    ri.draw_rect([0.0 + inputs.frames%100 as f32 * 0.1, 0.0, 0.4, 0.4], [1.0;4], true);
     return Ok(());
 }
 

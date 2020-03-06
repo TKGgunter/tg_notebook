@@ -3,7 +3,7 @@
 //Organizationally this is probably bad for cache
 extern crate glium;
 
-use lib::memory_tools::{LocalSettingsStorage};
+use lib::memory_tools::{LocalStorage};
 use lib::render_tools::{RenderInstructions, };
 
 use glium::texture::Texture2d;
@@ -20,7 +20,7 @@ pub struct InstructionBuffer{
     pub max_println_y    : Vec<f32>,
 
     pub render_instructions: Vec<RenderInstructions>,
-    pub localstorage       : Vec<LocalSettingsStorage>,
+    pub localstorage       : Vec<LocalStorage>,
     pub interactive        : Vec<bool>,  //TODO we could but prob should not use InteractiveInfo infocus to help with moving and expanding
     pub infocus            : Vec<bool>,  
 
@@ -65,7 +65,7 @@ impl InstructionBuffer{
         self.max_println_y.push(-0.0);
 
         self.render_instructions.push( Default::default() );
-        self.localstorage.push(LocalSettingsStorage::new());
+        self.localstorage.push(LocalStorage::new());
         self.ids.push(id); 
         self.interactive.push(false);
         self.infocus.push(false);

@@ -665,7 +665,7 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
 
     }
 
-    pub struct LocalSettingsStorage{
+    pub struct LocalStorage{
         //NOTE
         //This seems to be a good idea when it comes to interactive panels
         //However I'm not sure about the usefulness else where....
@@ -675,9 +675,9 @@ const _FIXED_CHAR_BUFFER_SIZE : usize = 128;
         pub interactive: bool,
         pub storage: GlobalStorage,
     }
-    impl LocalSettingsStorage{
-        pub fn new()->LocalSettingsStorage{
-            LocalSettingsStorage{
+    impl LocalStorage{
+        pub fn new()->LocalStorage{
+            LocalStorage{
                 interactive: false,
                 storage: GlobalStorage::new(),
             }
@@ -720,6 +720,7 @@ pub mod interaction_tools{
         pub text_key_pressed: char,
         pub keyboard_key: Vec<KeyboardEnum>,
         pub keyboard_key_status: Vec<ButtonStatus>,
+        pub frames: u64,
     }
 
 }

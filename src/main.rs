@@ -14,7 +14,7 @@ use std::ptr::{null_mut};
 mod lib;
 use lib::dynamic_lib_loading;
 use lib::dynamic_lib_loading::{open_lib, get_fn, close_lib, DyLib};
-use lib::memory_tools::{GlobalStorage, LocalSettingsStorage};
+use lib::memory_tools::{GlobalStorage, LocalStorage};
 use lib::interaction_tools::{InteractiveInfo};
 use lib::render_tools::{RenderInstructions, RenderType};
 
@@ -50,7 +50,7 @@ const DEFAULT_TEXTURE_WIDTH_FRAC  : f32 = 1.7;
 const DEFAULT_TEXTURE_HEIGHT_FRAC : f32 = 0.45;
 
 
-type UserFn = fn(&mut RenderInstructions, &mut GlobalStorage, &mut LocalSettingsStorage, &InteractiveInfo)->Result<(), String>;
+type UserFn = fn(&mut RenderInstructions, &mut GlobalStorage, &mut LocalStorage, &InteractiveInfo)->Result<(), String>;
 
 
 
@@ -602,7 +602,10 @@ fn main(){
     let mut debug_infostate = InfoState::new();
     debug_infostate.most_recent_load_stamp = format!("{:?}", std::time::Instant::now());
 
+    let mut frames = 0;
     'gameloop: loop{
+
+        if frames == std::u64::MAX{ frames = 0; }
 
 
         if let Ok((Ok(modified), new_dll_size_bytes)) = std::fs::metadata(&dll_path).map(|m| (m.modified(), m.len())) 
@@ -713,6 +716,8 @@ fn main(){
         });
 
 
+        interactive_info.frames = frames;
+
         set_windoinfo(windowinfo);
 
 
@@ -753,6 +758,7 @@ fn main(){
         }
 
         target.finish().unwrap();
+        frames += 1;
         if exit == true{break 'gameloop} 
     }
 
